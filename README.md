@@ -85,7 +85,8 @@ Zorunlu değerler:
 - `OPENROUTER_EMBEDDING_MODEL=google/gemini-embedding-001`
 
 OpenRouter tanımlanmazsa semantik yeniden sıralama `DEEPSEEK_API_KEY` ile
-çalışmaya devam eder. `SEMANTIC_CANDIDATES` varsayılan olarak `4`,
+çalışmaya devam eder. OpenRouter isteği başarısız olursa otomatik olarak
+DeepSeek sıralamasına geçilir. `SEMANTIC_CANDIDATES` varsayılan olarak `10`,
 `SEMANTIC_MIN_SCORE` ise `0.42` değerindedir.
 
 Kendi alan adınız varsa ayrıca:

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { bedestenBooleanQuery, decisionMatchesQuestion, researchAndAnswer } from "../lib/research";
 import { legislationSolrQuery, relevantLegislationArticles } from "../lib/legal-search";
 import { complete } from "../lib/deepseek";
@@ -84,6 +84,13 @@ Mevcut veya beklenen menfaatleri boşanma yüzünden zedelenen kusursuz veya dah
 
 MADDE 175
 Boşanma yüzünden yoksulluğa düşecek taraf nafaka isteyebilir.`;
+
+const originalSemanticCandidates = process.env.SEMANTIC_CANDIDATES;
+
+afterEach(() => {
+  if (originalSemanticCandidates == null) delete process.env.SEMANTIC_CANDIDATES;
+  else process.env.SEMANTIC_CANDIDATES = originalSemanticCandidates;
+});
 
 beforeEach(() => {
   vi.mocked(complete).mockReset();
@@ -252,6 +259,35 @@ describe("tek turlu araştırma akışı", () => {
 
     expect(answer.sources).toHaveLength(1);
     expect(answer.sources[0]).toMatchObject({ kind: "decision", documentId: "2222" });
+  });
+
+  it("aday sınırı 10'u aşarsa Bedesten'in sonraki sayfalarını da tarar", async () => {
+    process.env.SEMANTIC_CANDIDATES = "11";
+    const firstPage = Array.from({ length: 10 }, (_, index) => decisionSummary(String(1000 + index)));
+    const secondPage = [decisionSummary("2000")];
+    vi.mocked(searchDecisions).mockImplementation(async ({ page }) => ({
+      total: 11,
+      decisions: page === 2 ? secondPage : firstPage,
+    }));
+    vi.mocked(getDecisionDocument).mockResolvedValue({
+      mimeType: "text/html",
+      text: "Geçersiz fesih ve işe iade uyuşmazlığı incelenmiştir. ".repeat(20),
+    });
+
+    await researchAndAnswer(
+      "İşe iade davasında geçersiz fesih",
+      vi.fn(),
+      undefined,
+      ["YARGITAY"],
+      "sources"
+    );
+
+    expect(searchDecisions).toHaveBeenCalledWith(expect.objectContaining({ page: 2 }));
+    expect(semanticRerank).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.arrayContaining([expect.objectContaining({ id: "2000" })]),
+      undefined
+    );
   });
 
   it("analiz modunda kaynak topladıktan sonra yalnızca bir sentez çağrısı yapar", async () => {

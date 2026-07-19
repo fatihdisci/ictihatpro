@@ -630,6 +630,11 @@ export async function researchAndAnswer(
   let rateLimitError: BedestenRateLimitError | null = null;
   const maxSources = Math.min(6, Math.max(1, Number(process.env.MAX_SOURCES ?? "3")));
   const maxEvidenceChars = Math.min(240_000, Math.max(60_000, Number(process.env.MAX_EVIDENCE_CHARS ?? "120000")));
+  const configuredSemanticCandidates = Number(process.env.SEMANTIC_CANDIDATES ?? "10");
+  const semanticCandidateLimit = Math.min(
+    30,
+    Math.max(1, Number.isFinite(configuredSemanticCandidates) ? configuredSemanticCandidates : 10)
+  );
   onProgress({ type: "status", message: "Arama planı hazırlanıyor" });
   const plan = await createResearchPlan(question, selected, searchesDecisions, searchesLegislation, signal);
 
@@ -668,6 +673,7 @@ export async function researchAndAnswer(
     );
   }
 
+  let decisionTotal = 0;
   const searchResults = await Promise.allSettled(searchJobs);
   for (const settled of searchResults) {
     if (settled.status !== "fulfilled") {
@@ -675,6 +681,7 @@ export async function researchAndAnswer(
       continue;
     }
     if (settled.value.kind === "decision") {
+      decisionTotal = Math.max(decisionTotal, settled.value.result.total);
       settled.value.result.decisions.forEach((decision) => candidates.set(decision.documentId, decision));
       continue;
     }
@@ -684,6 +691,32 @@ export async function researchAndAnswer(
       const existing = legislationCandidates.get(summary.legislationId);
       if (!existing || score > existing.score) {
         legislationCandidates.set(summary.legislationId, { summary, plan: settled.value.plan, score });
+      }
+    }
+  }
+
+  if (plan.decisionQuery && searchesDecisions && semanticCandidateLimit > 10) {
+    const pageCount = Math.min(3, Math.ceil(semanticCandidateLimit / 10));
+    for (let page = 2; page <= pageCount; page += 1) {
+      if (decisionTotal > 0 && candidates.size >= Math.min(decisionTotal, semanticCandidateLimit)) break;
+      onProgress({
+        type: "status",
+        message: "Kararlarda ek adaylar aranıyor",
+        detail: `${page}. sonuç sayfası`,
+      });
+      try {
+        const extra = await searchDecisions({
+          phrase: plan.decisionQuery,
+          court: decisionCourt,
+          courtTypes: selectedDecisionCollections,
+          page,
+        });
+        decisionTotal = Math.max(decisionTotal, extra.total);
+        extra.decisions.forEach((decision) => candidates.set(decision.documentId, decision));
+        if (extra.decisions.length === 0) break;
+      } catch (error) {
+        if (isBedestenRateLimitError(error)) rateLimitError = error;
+        break;
       }
     }
   }
@@ -713,11 +746,6 @@ export async function researchAndAnswer(
   }
 
   const decisionTarget = searchesDecisions ? Math.min(2, maxSources - evidence.size) : 0;
-  const configuredSemanticCandidates = Number(process.env.SEMANTIC_CANDIDATES ?? "4");
-  const semanticCandidateLimit = Math.min(
-    8,
-    Math.max(decisionTarget, Number.isFinite(configuredSemanticCandidates) ? configuredSemanticCandidates : 4)
-  );
   const loadedDecisions: LoadedDecision[] = [];
   let decisionAttempts = 0;
   for (const summary of candidates.values()) {

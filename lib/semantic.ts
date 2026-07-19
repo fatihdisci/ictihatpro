@@ -49,7 +49,7 @@ const rankingInFlight = new Map<string, Promise<SemanticRanking>>();
 const MAX_CACHE_ENTRIES = 40;
 
 function rankingKey(query: string, documents: SemanticDocument[]): string {
-  const provider = process.env.OPENROUTER_API_KEY ? "openrouter" : "deepseek";
+  const provider = process.env.OPENROUTER_API_KEY ? "openrouter-with-deepseek-fallback" : "deepseek";
   const hash = createHash("sha256");
   hash.update(provider);
   hash.update(query);
@@ -192,10 +192,18 @@ export async function semanticRerank(
   const active = rankingInFlight.get(key);
   if (active) return active;
 
-  const pending = (process.env.OPENROUTER_API_KEY
-    ? rankWithOpenRouter(query, documents, signal)
-    : rankWithDeepSeek(query, documents, signal)
-  ).then((value) => {
+  const rank = async () => {
+    if (process.env.OPENROUTER_API_KEY) {
+      try {
+        return await rankWithOpenRouter(query, documents, signal);
+      } catch (openRouterError) {
+        if (!process.env.DEEPSEEK_API_KEY) throw openRouterError;
+        return rankWithDeepSeek(query, documents, signal);
+      }
+    }
+    return rankWithDeepSeek(query, documents, signal);
+  };
+  const pending = rank().then((value) => {
     rememberRanking(key, value);
     return value;
   }).finally(() => {
