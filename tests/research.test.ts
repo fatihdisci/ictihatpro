@@ -186,7 +186,7 @@ describe("tek turlu araştırma akışı", () => {
       "Konut ihtiyacı nedeniyle tahliye davasının şartları ve ispatı nasıl değerlendirilir?",
       vi.fn(),
       undefined,
-      ["YARGITAY", "ISTINAF", "YEREL", "MEVZUAT"],
+      ["YARGITAY", "ISTINAF", "MEVZUAT"],
       "sources"
     );
 
@@ -197,7 +197,7 @@ describe("tek turlu araştırma akışı", () => {
       expect.objectContaining({ kind: "decision", documentId: "2222" }),
     ]));
     expect(answer.sources).not.toEqual(expect.arrayContaining([expect.objectContaining({ documentId: "1111" })]));
-    expect(answer.searchedSources).toEqual(["YARGITAY", "ISTINAF", "YEREL", "MEVZUAT"]);
+    expect(answer.searchedSources).toEqual(["YARGITAY", "ISTINAF", "MEVZUAT"]);
   });
 
   it("boşanma sorusunda personel yönetmeliğini indirmeden eler ve TMK 174'ü gösterir", async () => {
@@ -315,6 +315,36 @@ describe("tek turlu araştırma akışı", () => {
 
     expect(answer.sources).toHaveLength(1);
     expect(answer.sources[0]).toMatchObject({ kind: "decision", documentId: "2222" });
+  });
+
+  it("ilgili kararları seçtikten sonra sonuçları en yeni tarihten eskiye dizer", async () => {
+    const older = decisionSummary("1111", { date: "03.04.2021" });
+    const newer = decisionSummary("2222", {
+      date: "12.09.2024",
+      esasNo: "2024/12",
+      kararNo: "2024/44",
+    });
+    vi.mocked(searchDecisions).mockResolvedValue({ total: 2, decisions: [older, newer] });
+    vi.mocked(getDecisionDocument).mockResolvedValue({
+      mimeType: "text/html",
+      text: "İşe iade davasında geçersiz fesih ve işe başlatmama tazminatı değerlendirilmiştir. ".repeat(20),
+    });
+    // Eski karar anlam puanında önde olsa da sonuç listesinde tarih sırası
+    // geçerlidir; anlam puanı yalnızca hangi adayların seçileceğini belirler.
+    vi.mocked(semanticRerank).mockResolvedValue({
+      provider: "deepseek-rerank",
+      results: [{ id: "1111", score: 0.97 }, { id: "2222", score: 0.86 }],
+    });
+
+    const answer = await researchAndAnswer(
+      "İşe iade davasında geçersiz fesih",
+      vi.fn(),
+      undefined,
+      ["YARGITAY"],
+      "sources"
+    );
+
+    expect(answer.sources.filter((source) => source.kind === "decision").map((source) => source.documentId)).toEqual(["2222", "1111"]);
   });
 
   it("aday sınırı 10'u aşarsa Bedesten'in sonraki sayfalarını da tarar", async () => {

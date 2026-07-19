@@ -42,7 +42,6 @@ export function AnswerView({ answer }: { answer: Answer }) {
       if (/istinaf|bölge\s+adliye/iu.test(label)) return "ISTINAF";
       if (/danıştay/iu.test(label)) return "DANISTAY";
       if (/kanun\s+yararına|kyb/iu.test(label)) return "KYB";
-      if (/yerel|hukuk\s+mahkemesi/iu.test(label)) return "YEREL";
       return null;
     };
     const searched = answer.searchedSources ?? [];

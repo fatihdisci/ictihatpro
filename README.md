@@ -86,7 +86,7 @@ Zorunlu değerler:
 
 OpenRouter tanımlanmazsa semantik yeniden sıralama `DEEPSEEK_API_KEY` ile
 çalışmaya devam eder. OpenRouter isteği başarısız olursa otomatik olarak
-DeepSeek sıralamasına geçilir. `SEMANTIC_CANDIDATES` varsayılan olarak `10`,
+DeepSeek sıralamasına geçilir. `SEMANTIC_CANDIDATES` varsayılan olarak `20`,
 `SEMANTIC_MIN_SCORE` ise `0.42` değerindedir.
 
 Kendi alan adınız varsa ayrıca:
@@ -95,7 +95,7 @@ Kendi alan adınız varsa ayrıca:
 
 Vercel'de dosya sistemi kalıcı değildir. Bu nedenle yerel dosya önbelleği performans garantisi vermez; uygulama önbellek olmadan da çalışır.
 
-Uygulama varsayılan olarak en fazla 8 araştırma turunda 3 doğrulanmış karar inceler. Daha kapsamlı ama daha yavaş araştırma için isteğe bağlı olarak `MAX_RESEARCH_TURNS`, `MAX_SOURCES` ve `MAX_EVIDENCE_CHARS` ortam değişkenlerini artırabilirsiniz.
+Uygulama varsayılan olarak 20 aday kararın tam metnini doğrular; anlamsal ve kelime temelli elemeden geçen en fazla 6 kaynak (mevzuat dâhil) gösterilir. Aday havuzunu değiştirmek için `SEMANTIC_CANDIDATES`, gösterilen kaynak sayısını değiştirmek için `MAX_SOURCES` kullanılabilir.
 
 Bedesten arama davranışına ilişkin canlıda doğrulanmış notlar:
 

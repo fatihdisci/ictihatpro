@@ -86,7 +86,7 @@ describe("Bedesten arama isteği", () => {
     expect(payload.data.itemTypeList).toEqual(["YARGITAYKARARI", "ISTINAFHUKUK"]);
   });
 
-  it("seçilen Danıştay, yerel hukuk ve kanun yararına bozma koleksiyonlarını aynen yollar", async () => {
+  it("seçilen Danıştay ve kanun yararına bozma koleksiyonlarını aynen yollar", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -98,11 +98,11 @@ describe("Bedesten arama isteği", () => {
     await searchDecisions({
       phrase: "muvazaa",
       court: "YARGITAY",
-      courtTypes: ["DANISTAYKARAR", "YERELHUKUK", "KYB"],
+      courtTypes: ["DANISTAYKARAR", "KYB"],
     });
 
     const payload = JSON.parse(fetchMock.mock.calls[0][1].body as string);
-    expect(payload.data.itemTypeList).toEqual(["DANISTAYKARAR", "YERELHUKUK", "KYB"]);
+    expect(payload.data.itemTypeList).toEqual(["DANISTAYKARAR", "KYB"]);
   });
 
   it("aynı anda gelen özdeş Bedesten aramalarını tek ağ isteğinde birleştirir", async () => {

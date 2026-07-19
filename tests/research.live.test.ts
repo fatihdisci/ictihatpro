@@ -12,12 +12,20 @@ live("canlı birleşik araştırma", () => {
         "Konut ihtiyacı nedeniyle tahliye davasının şartları ve ispatı nasıl değerlendirilir?",
         (event) => progress.push(event),
         undefined,
-        ["YARGITAY", "ISTINAF", "YEREL", "MEVZUAT"],
+        ["YARGITAY", "ISTINAF", "MEVZUAT"],
         "sources"
       );
 
       const decisions = answer.sources.filter((source) => source.kind === "decision");
       expect(decisions.length).toBeGreaterThan(2);
+      const dates = decisions
+        .map((source) => source.date)
+        .filter((date): date is string => Boolean(date))
+        .map((date) => {
+          const [day, month, year] = date.split(".").map(Number);
+          return Date.UTC(year, month - 1, day);
+        });
+      expect(dates).toEqual([...dates].sort((first, second) => second - first));
       const foundLegislation = answer.sources.some(
         (source) => source.kind === "legislation" && source.number === "6098" && /MADDE\s+350/iu.test(source.excerpt)
       );

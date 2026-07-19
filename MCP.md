@@ -8,14 +8,14 @@ https://VERCEL-ALAN-ADINIZ/api/mcp
 
 ## Araçlar
 
-- `ictihat_ara`: Yargıtay, Danıştay, yerel hukuk, BAM hukuk ve kanun yararına bozma kararlarında arama yapar.
+- `ictihat_ara`: Yargıtay, Danıştay, BAM hukuk ve kanun yararına bozma kararlarında arama yapar.
 - `ictihat_getir`: Yalnızca arama sonucunda sunucunun imzaladığı belirteçle kararı açar ve esas/karar numaralarını tam metinde doğrular.
 - `mevzuat_ara`: Kanun, KHK, tüzük, yönetmelik, Cumhurbaşkanlığı düzenlemeleri, tebliğ ve mülga mevzuatta arama yapar.
 - `mevzuat_getir`: Yalnızca arama sonucundaki imzalı belirteçle resmî mevzuat metnini getirir.
 
 ## Kapsam sınırı
 
-Bedesten karar endpoint'inin mevcut koleksiyonları `YARGITAYKARARI`, `DANISTAYKARAR`, `YERELHUKUK`, `ISTINAFHUKUK` ve `KYB`'dir. `ISTINAFHUKUK`, Bölge Adliye Mahkemelerinin hukuk kararlarını kapsar. Bölge Adliye Mahkemesi ceza kararları ile Bölge İdare Mahkemesi kararları bu entegrasyonda ayrı koleksiyon olarak bulunmaz. Bir Danıştay kararının içinde Bölge İdare Mahkemesi kararından söz edilmesi, o kararın ayrı tam metnine erişildiği anlamına gelmez.
+Uygulama karar aramasında `YARGITAYKARARI`, `DANISTAYKARAR`, `ISTINAFHUKUK` ve `KYB` koleksiyonlarını kullanır; `YERELHUKUK` kapsamdan çıkarılmıştır. `ISTINAFHUKUK`, Bölge Adliye Mahkemelerinin hukuk kararlarını kapsar. Bölge Adliye Mahkemesi ceza kararları ile Bölge İdare Mahkemesi kararları bu entegrasyonda ayrı koleksiyon olarak bulunmaz. Bir Danıştay kararının içinde Bölge İdare Mahkemesi kararından söz edilmesi, o kararın ayrı tam metnine erişildiği anlamına gelmez.
 
 ## Güvenlik modeli
 

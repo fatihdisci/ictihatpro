@@ -10,10 +10,9 @@ const DOCUMENT = "/emsal-karar/getDocumentContent";
 export const COURT_TYPES = {
   YARGITAY: ["YARGITAYKARARI"],
   DANISTAY: ["DANISTAYKARAR"],
-  YEREL: ["YERELHUKUK"],
   ISTINAF: ["ISTINAFHUKUK"],
   KYB: ["KYB"],
-  HEPSI: ["YARGITAYKARARI", "DANISTAYKARAR", "YERELHUKUK", "ISTINAFHUKUK", "KYB"],
+  HEPSI: ["YARGITAYKARARI", "DANISTAYKARAR", "ISTINAFHUKUK", "KYB"],
 } as const;
 
 export type DecisionCourt = keyof typeof COURT_TYPES | "YARGITAY_ISTINAF";

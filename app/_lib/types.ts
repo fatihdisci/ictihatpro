@@ -29,7 +29,7 @@ export type LegislationSource = {
 
 export type Source = DecisionSource | LegislationSource;
 
-export type ResearchSource = "YARGITAY" | "ISTINAF" | "DANISTAY" | "YEREL" | "KYB" | "MEVZUAT";
+export type ResearchSource = "YARGITAY" | "ISTINAF" | "DANISTAY" | "KYB" | "MEVZUAT";
 
 export type Answer = {
   mode?: "analysis" | "sources";
@@ -48,7 +48,6 @@ export const SOURCE_OPTIONS: Array<{ id: ResearchSource; label: string; shortLab
   { id: "YARGITAY", label: "Yargıtay kararları", shortLabel: "Yargıtay" },
   { id: "ISTINAF", label: "BAM hukuk kararları", shortLabel: "İstinaf" },
   { id: "DANISTAY", label: "Danıştay kararları", shortLabel: "Danıştay" },
-  { id: "YEREL", label: "Yerel hukuk mahkemesi kararları", shortLabel: "Yerel" },
   { id: "KYB", label: "Kanun yararına bozma kararları", shortLabel: "KYB" },
   { id: "MEVZUAT", label: "Resmî mevzuat", shortLabel: "Mevzuat" },
 ];

@@ -28,7 +28,7 @@ import {
 } from "./legal-search";
 import { semanticRerank } from "./semantic";
 
-export const RESEARCH_SOURCES = ["YARGITAY", "ISTINAF", "DANISTAY", "YEREL", "KYB", "MEVZUAT"] as const;
+export const RESEARCH_SOURCES = ["YARGITAY", "ISTINAF", "DANISTAY", "KYB", "MEVZUAT"] as const;
 export type ResearchSource = (typeof RESEARCH_SOURCES)[number];
 export const DEFAULT_RESEARCH_SOURCES: ResearchSource[] = ["YARGITAY"];
 
@@ -618,7 +618,6 @@ export async function researchAndAnswer(
     YARGITAY: "YARGITAYKARARI",
     ISTINAF: "ISTINAFHUKUK",
     DANISTAY: "DANISTAYKARAR",
-    YEREL: "YERELHUKUK",
     KYB: "KYB",
   };
   const selectedDecisionCollections = selected
@@ -636,10 +635,13 @@ export async function researchAndAnswer(
   // doğrulanan sonuçların altıya kadar gösterilmesine izin veriyoruz.
   const maxSources = Math.min(8, Math.max(1, Number(process.env.MAX_SOURCES ?? "6")));
   const maxEvidenceChars = Math.min(240_000, Math.max(60_000, Number(process.env.MAX_EVIDENCE_CHARS ?? "120000")));
-  const configuredSemanticCandidates = Number(process.env.SEMANTIC_CANDIDATES ?? "10");
+  // Karar havuzu önce geniş tutulur, ardından tam metin doğrulaması ve
+  // anlamsal elemeden geçer. Bu sayı sonuçta gösterilecek karar sayısı değil,
+  // indirilecek aday sayısıdır.
+  const configuredSemanticCandidates = Number(process.env.SEMANTIC_CANDIDATES ?? "20");
   const semanticCandidateLimit = Math.min(
-    30,
-    Math.max(1, Number.isFinite(configuredSemanticCandidates) ? configuredSemanticCandidates : 10)
+    40,
+    Math.max(1, Number.isFinite(configuredSemanticCandidates) ? configuredSemanticCandidates : 20)
   );
   onProgress({ type: "status", message: "Arama planı hazırlanıyor" });
   const plan = await createResearchPlan(question, selected, searchesDecisions, searchesLegislation, signal);
@@ -702,7 +704,7 @@ export async function researchAndAnswer(
   }
 
   if (plan.decisionQuery && searchesDecisions && semanticCandidateLimit > 10) {
-    const pageCount = Math.min(3, Math.ceil(semanticCandidateLimit / 10));
+    const pageCount = Math.min(4, Math.ceil(semanticCandidateLimit / 10));
     for (let page = 2; page <= pageCount; page += 1) {
       if (decisionTotal > 0 && candidates.size >= Math.min(decisionTotal, semanticCandidateLimit)) break;
       onProgress({
@@ -819,7 +821,15 @@ export async function researchAndAnswer(
         .filter((item) => item.lexicalMatches.length >= item.lexicalRequired)
         .slice(0, decisionTarget);
     }
-    selected.forEach((item) => addDecisionEvidence(item, evidence));
+    // Anlam yakınlığı sonuç kümesini seçer; kullanıcıya gösterilen kararlar
+    // ise bu küme içinde en yeni tarihten eskiye doğru akar.
+    const decisionTimestamp = (item: LoadedDecision) => {
+      const match = item.summary.date?.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+      return match ? Date.UTC(Number(match[3]), Number(match[2]) - 1, Number(match[1])) : Number.NEGATIVE_INFINITY;
+    };
+    selected
+      .sort((first, second) => decisionTimestamp(second) - decisionTimestamp(first))
+      .forEach((item) => addDecisionEvidence(item, evidence));
   }
 
   const sources = [...evidence.values()];

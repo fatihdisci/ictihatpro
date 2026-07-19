@@ -8,8 +8,8 @@ import { getLegislationDocument, LEGISLATION_TYPES, searchLegislation } from "./
 import { researchAndAnswer, type ResearchSource } from "./research";
 import { issueSourceToken, verifySourceToken } from "./source-token";
 
-const courtSchema = z.enum(["YARGITAY", "DANISTAY", "YEREL", "ISTINAF", "KYB", "HEPSI"]);
-const semanticCourtSchema = z.enum(["YARGITAY", "DANISTAY", "YEREL", "ISTINAF", "KYB"]);
+const courtSchema = z.enum(["YARGITAY", "DANISTAY", "ISTINAF", "KYB", "HEPSI"]);
+const semanticCourtSchema = z.enum(["YARGITAY", "DANISTAY", "ISTINAF", "KYB"]);
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Tarih YYYY-AA-GG biçiminde olmalı");
 
 const decisionTokenSchema = z
@@ -96,7 +96,7 @@ export function createMcpServer(): McpServer {
           .array(semanticCourtSchema)
           .min(1)
           .max(5)
-          .default(["YARGITAY", "ISTINAF", "DANISTAY", "YEREL", "KYB"])
+          .default(["YARGITAY", "ISTINAF", "DANISTAY", "KYB"])
           .describe("Semantik aramada taranacak karar koleksiyonları"),
       },
       annotations: readOnlyAnnotations,
@@ -146,7 +146,7 @@ export function createMcpServer(): McpServer {
     {
       title: "İçtihat ara",
       description:
-        "Türk hukukuna ilişkin doğal dildeki her içtihat/karar/dava sorusunda, kullanıcı 'ara' demese bile önce çağır. UYAP Bedesten'de Yargıtay, Danıştay, yerel hukuk, BAM hukuk ve kanun yararına bozma kararlarını arar. Sonuçlar yalnızca aday künyelerdir; hukukî cevap yazmadan önce seçilen sonuçlar ictihat_getir ile tam metinden doğrulanmalıdır.",
+        "Türk hukukuna ilişkin doğal dildeki her içtihat/karar/dava sorusunda, kullanıcı 'ara' demese bile önce çağır. UYAP Bedesten'de Yargıtay, Danıştay, BAM hukuk ve kanun yararına bozma kararlarını arar. Sonuçlar yalnızca aday künyelerdir; hukukî cevap yazmadan önce seçilen sonuçlar ictihat_getir ile tam metinden doğrulanmalıdır.",
       inputSchema: {
         ifade: z
           .string()
