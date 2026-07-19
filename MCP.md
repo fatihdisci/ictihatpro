@@ -3,12 +3,13 @@
 Bu proje Vercel üzerinde salt-okunur bir Streamable HTTP MCP sunucusu sağlar:
 
 ```text
-https://VERCEL-ALAN-ADINIZ/api/mcp
+https://ictihatpro.vercel.app/api/mcp
 ```
 
 ## Araçlar
 
-- `ictihat_ara`: Yargıtay, Danıştay, BAM hukuk ve kanun yararına bozma kararlarında arama yapar.
+- `ictihat_semantik_ara`: Doğal dilde araştırmayı tek çağrıda yürütür. Seçilen karar kaynaklarında doğrulanmış kararları ve `MEVZUAT` seçilmişse resmî metinden ilgili maddeleri ayrı dizilerde getirir. Varsayılan kapsamın tamamı açıktır: Yargıtay, Danıştay, BAM hukuk, kanun yararına bozma ve mevzuat.
+- `ictihat_ara`: Kesin ifade, daire veya tarih filtreli aramalarda Yargıtay, Danıştay, BAM hukuk ve kanun yararına bozma kararlarını aday olarak arar.
 - `ictihat_getir`: Yalnızca arama sonucunda sunucunun imzaladığı belirteçle kararı açar ve esas/karar numaralarını tam metinde doğrular.
 - `mevzuat_ara`: Kanun, KHK, tüzük, yönetmelik, Cumhurbaşkanlığı düzenlemeleri, tebliğ ve mülga mevzuatta arama yapar.
 - `mevzuat_getir`: Yalnızca arama sonucundaki imzalı belirteçle resmî mevzuat metnini getirir.
@@ -28,12 +29,14 @@ Uygulama karar aramasında `YARGITAYKARARI`, `DANISTAYKARAR`, `ISTINAFHUKUK` ve 
 
 ## ChatGPT'de bağlama
 
-ChatGPT/Codex masaüstü uygulamasında `Settings → MCP servers → Add server` yolundan Streamable HTTP sunucusu eklenebilir. Bu proje için alanlar şöyledir:
+Codex masaüstü uygulamasında `Settings → MCP servers → Add server` yolundan Streamable HTTP sunucusu eklenebilir. Bu proje için alanlar şöyledir:
 
 1. **Ad:** `İçtihat ve Mevzuat Asistanı`
 2. **Tür:** `Akış destekli HTTP`
-3. **URL:** `https://VERCEL-ALAN-ADINIZ/api/mcp`
+3. **URL:** `https://ictihatpro.vercel.app/api/mcp`
 4. Taşıyıcı token, başlıklar ve ortam değişkenlerini ilk sürümde boş bırakın.
 5. Kaydettikten sonra uygulamayı yeniden başlatın ve yeni bir görevde `/mcp` ile bağlantıyı doğrulayın.
 
-Sunucu, doğal dildeki Türk hukuku sorularında araçlar adını anılmadan önce kullanılacak şekilde yönergeler yayımlar. Örneğin “Muvazaalı işlemde ispat yükü nasıl değerlendirilir?” doğrudan yazılabilir. Araç seçimi istemci modelinin kararı olduğundan yüzde yüz zorlayıcı bir anahtar yoktur; MCP bağlantısı etkin ve araçlar açık olmalıdır. Normal ChatGPT web/mobil sohbetleri ile masaüstü Codex MCP bağlantısı farklı ürün yüzeyleridir; birinde yapılan bağlantı diğerine kendiliğinden taşınmaz.
+Sunucu, doğal dildeki Türk hukuku sorularında araçlar adını anılmadan önce kullanılacak şekilde yönergeler yayımlar. Örneğin “Muvazaalı işlemde ispat yükü için ilgili kararları ve kanun maddelerini getir” doğrudan yazılabilir. Araç seçimi istemci modelinin kararı olduğundan yüzde yüz zorlayıcı bir anahtar yoktur; MCP bağlantısı etkin ve araçlar açık olmalıdır. `sourceToken` yalnızca kararın veya mevzuatın uzun metnini açmak için araçlar arasında kullanılır; kullanıcıya gösterilmez.
+
+ChatGPT webde özel MCP uygulaması kullanılıyorsa uygulamanın araç listesini yenileyin. Yeni bir sohbette uygulamayı seçin ve aynı doğal dildeki istemi kullanın. Araç tanımı güncellendiğinde ChatGPT, yeni şemayı ancak uygulamanın **Refresh/Yenile** işlemi sonrasında görür.

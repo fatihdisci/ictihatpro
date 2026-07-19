@@ -9,7 +9,7 @@ import { researchAndAnswer, type ResearchSource } from "./research";
 import { issueSourceToken, verifySourceToken } from "./source-token";
 
 const courtSchema = z.enum(["YARGITAY", "DANISTAY", "ISTINAF", "KYB", "HEPSI"]);
-const semanticCourtSchema = z.enum(["YARGITAY", "DANISTAY", "ISTINAF", "KYB"]);
+const semanticResearchSourceSchema = z.enum(["YARGITAY", "DANISTAY", "ISTINAF", "KYB", "MEVZUAT"]);
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Tarih YYYY-AA-GG biçiminde olmalı");
 
 const decisionTokenSchema = z
@@ -76,28 +76,28 @@ export function createMcpServer(): McpServer {
     {
       name: "ictihat-asistani",
       title: "İçtihat ve Mevzuat Asistanı",
-      version: "1.2.0",
+      version: "1.3.0",
       websiteUrl: "https://github.com/fatihdisci/ictihatpro",
     },
     {
-      instructions: `Bu sunucu Türk hukuku soruları için birincil resmî araştırma kaynağıdır. Kullanıcı Türk hukukunda kanun, madde, yürürlük, Yargıtay, Danıştay, BAM, içtihat, dava türü, hukukî şart veya uygulama sorarsa, kullanıcı araç adını yazmasa bile önce bu sunucunun aracını kullan. Doğal dille anlatılan karar sorularında ictihat_semantik_ara kullan; kesin ifade, daire veya tarih filtreli aramalarda ictihat_ara kullan. ictihat_ara sonuçlarını ictihat_getir ile tam metinden doğrula. ictihat_semantik_ara sonuçları sunucuda zaten kimlik ve anlam ilgisi bakımından doğrulanmıştır; daha geniş metin gerekirse sourceToken ile ictihat_getir çağır. Kanun veya düzenleme sorularında mevzuat_ara ile ara, ardından mevzuat_getir ile resmî metni aç. Arama künyesini veya model bilgisini kaynak gibi sunma; yalnızca getirme aracının doğruladığı metne dayan. Bu sunucu kapsam dışındaysa bunu açıkça belirt.`,
+      instructions: `Bu sunucu Türk hukuku soruları için birincil resmî araştırma kaynağıdır. Kullanıcı Türk hukukunda kanun, madde, yürürlük, Yargıtay, Danıştay, BAM, içtihat, dava türü, hukukî şart veya uygulama sorarsa, kullanıcı araç adını yazmasa bile önce bu sunucunun aracını kullan. Doğal dille anlatılan araştırma sorularında ictihat_semantik_ara kullan; bu araç doğrulanmış kararları ve seçilmişse ilgili resmî mevzuat maddelerini aynı yanıtta ayrı diziler halinde döndürür. Varsayılan kapsam Yargıtay, Danıştay, BAM hukuk, kanun yararına bozma ve resmî mevzuattır; kullanıcının seçtiği kaynak kümesini aynen uygula. Kesin ifade, daire veya tarih filtreli aramalarda ictihat_ara kullan; sonuçlarını ictihat_getir ile tam metinden doğrula. Yalnızca kanun metni veya yürürlük sorularında mevzuat_ara ve ardından mevzuat_getir kullan. sourceToken yalnızca araçlar arası teknik bir belirteçtir; kullanıcıya ASLA gösterme veya açıklama. Arama künyesini, model bilgisini ya da teknik belirteçleri kaynak gibi sunma; yalnızca aracın doğruladığı karar ve mevzuat metinlerini göster. Hukukî yorum, özet veya sonuç üretme istenmemişse doğrudan ilgili maddeyi ve kararı ver. Bu sunucu kapsam dışındaysa bunu açıkça belirt.`,
     }
   );
 
   server.registerTool(
     "ictihat_semantik_ara",
     {
-      title: "Semantik içtihat ara",
+      title: "Karar ve mevzuat araştır",
       description:
-        "Doğal dille anlatılan hukukî mesele için Bedesten adaylarını arar, sınırlı sayıdaki kararın tam metnini ve künyesini doğrular, ardından anlam yakınlığına göre sıralar. Hukukî yorum üretmez; doğrudan doğrulanmış karar künyeleri ve ilgili pasajları döndürür.",
+        "Doğal dille anlatılan hukukî mesele için seçilen karar koleksiyonlarını ve resmî mevzuatı birlikte tarar. Kararların tam metnini ve künyesini doğrular, anlam yakınlığıyla seçer ve en yeniden eskiye sıralar. Mevzuatta ilgili maddeleri doğrudan metinden seçer. Hukukî yorum üretmez; doğrulanmış karar künyeleri/pasajları ile ilgili mevzuatı ayrı dizilerde döndürür.",
       inputSchema: {
         soru: z.string().trim().min(5).max(2000).describe("Aranan hukukî meseleyi doğal bir cümleyle anlatın"),
         kaynaklar: z
-          .array(semanticCourtSchema)
+          .array(semanticResearchSourceSchema)
           .min(1)
           .max(5)
-          .default(["YARGITAY", "ISTINAF", "DANISTAY", "KYB"])
-          .describe("Semantik aramada taranacak karar koleksiyonları"),
+          .default(["YARGITAY", "ISTINAF", "DANISTAY", "KYB", "MEVZUAT"])
+          .describe("Taranacak kaynaklar. Karar kaynakları ve MEVZUAT birlikte veya ayrı seçilebilir."),
       },
       annotations: readOnlyAnnotations,
     },
@@ -129,11 +129,41 @@ export function createMcpServer(): McpServer {
               sourceToken: issueSourceToken("decision", tokenPayload),
             };
           });
+        const legislation = answer.sources
+          .filter((source) => source.kind === "legislation")
+          .map((source) => {
+            const tokenPayload = {
+              legislationId: source.legislationId,
+              number: source.number,
+              name: source.name,
+              type: source.type,
+              series: source.series,
+              officialGazetteDate: source.officialGazetteDate,
+              officialGazetteNumber: source.officialGazetteNumber,
+              url: source.sourceUrl,
+            };
+            return {
+              ...tokenPayload,
+              excerpt: source.excerpt,
+              evidenceComplete: source.evidenceComplete,
+              sourceToken: issueSourceToken("legislation", tokenPayload),
+            };
+          });
         return result({
           semantic: true,
           verified: true,
+          searchedSources: answer.searchedSources ?? kaynaklar,
           decisions,
-          warning: "Sonuçlar tam karar metnindeki künye ve anlam ilgisi doğrulandıktan sonra sıralanmıştır.",
+          legislation,
+          presentation: {
+            order: ["legislation", "decisions"],
+            rules: [
+              "Yalnızca decisions ve legislation dizilerindeki doğrulanmış metinleri kullan.",
+              "Kullanıcı istemedikçe hukukî yorum, özet veya sonuç çıkarma; ilgili maddeyi ve kararı doğrudan göster.",
+              "sourceToken teknik bir araç belirtecidir; kullanıcıya gösterme veya kaynak olarak yazma.",
+            ],
+          },
+          warning: "Kararlar tam metindeki künye ve anlam ilgisi doğrulandıktan sonra seçilmiş, gösterim için en yeni tarihten eskiye sıralanmıştır. Mevzuat maddeleri resmî metinden seçilmiştir.",
         });
       } catch (error) {
         return failure(error);

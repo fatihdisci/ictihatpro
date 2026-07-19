@@ -15,7 +15,7 @@ describe("MCP sunucusu", () => {
     else process.env.SESSION_SECRET = originalSecret;
   });
 
-  it("semantik arama dahil beş salt-okunur hukuk aracını protokol üzerinden listeler", async () => {
+  it("karar ve mevzuatı birlikte araştıran beş salt-okunur hukuk aracını protokol üzerinden listeler", async () => {
     const server = createMcpServer();
     const client = new Client({ name: "ictihat-test-client", version: "1.0.0" });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -32,6 +32,10 @@ describe("MCP sunucusu", () => {
     ]);
     expect(listed.tools.every((tool) => tool.annotations?.readOnlyHint === true)).toBe(true);
     expect(client.getInstructions()).toContain("kullanıcı araç adını yazmasa bile önce bu sunucunun aracını kullan");
+    const semanticTool = listed.tools.find((tool) => tool.name === "ictihat_semantik_ara");
+    expect(semanticTool?.title).toBe("Karar ve mevzuat araştır");
+    expect(JSON.stringify(semanticTool?.inputSchema)).toContain("MEVZUAT");
+    expect(client.getInstructions()).toContain("sourceToken yalnızca araçlar arası teknik bir belirteçtir");
     await client.close();
     await server.close();
   });

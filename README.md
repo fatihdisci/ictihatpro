@@ -106,7 +106,7 @@ Bedesten arama davranışına ilişkin canlıda doğrulanmış notlar:
 
 ## ChatGPT MCP
 
-Vercel kurulumu ayrıca `/api/mcp` adresinde beş salt-okunur araç sunar: normal ve semantik içtihat arama, doğrulanmış içtihat getirme ve resmî mevzuat arama/getirme. ChatGPT/Codex masaüstü uygulamasıyla bağlantı, güvenlik modeli ve mahkeme kapsamının dürüst sınırları için [MCP.md](./MCP.md) dosyasına bakın.
+Vercel kurulumu ayrıca `/api/mcp` adresinde beş salt-okunur araç sunar. Doğal dildeki ana araştırma aracı seçilen karar kaynaklarını ve resmî mevzuatı tek çağrıda tarar; doğrulanmış kararları ile ilgili mevzuat maddelerini ayrı sonuç kümelerinde döndürür. Kesin filtreli karar araması ve ham mevzuat araması/getirme araçları da korunur. ChatGPT/Codex bağlantısı, güvenlik modeli ve mahkeme kapsamının dürüst sınırları için [MCP.md](./MCP.md) dosyasına bakın.
 
 Bedesten ve mevzuat istemci tasarımında incelenen MIT lisanslı açık kaynak projeler ve korunan lisans metni için [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) dosyasına bakın. Uygulama bu depolara çalışma zamanı bağımlılığı taşımaz.
 
