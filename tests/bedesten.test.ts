@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   plausibleDecisionDate,
+  searchDecisions,
   verifyDecisionDocument,
   type DecisionSummary,
 } from "../lib/bedesten";
@@ -42,5 +43,30 @@ describe("Bedesten metadata korumaları", () => {
   it("esas ve karar numaraları metinde birlikteyse kararı doğrular", () => {
     const body = `Yargıtay 9. Hukuk Dairesi 2023/1234 E. 2024/5678 K.\n${"Gerekçe. ".repeat(80)}`;
     expect(verifyDecisionDocument(summary, body)).toEqual({ verified: true });
+  });
+});
+
+describe("Bedesten arama isteği", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("Bedesten'in reddettiği karakterleri temizler ve alaka sıralamasını bozmaz", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: async () => ({ metadata: { FMTY: "SUCCESS" }, data: { total: 0, emsalKararList: [] } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await searchDecisions({ phrase: 'ipotek* AND "türk lirası" — kaldırılması!', court: "HEPSI" });
+
+    const payload = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    // `*` gibi karakterler sorgunun tamamının reddine yol açar; tarih sıralaması
+    // ise ilgisiz güncel kararları öne aldığı için varsayılan (alaka) kullanılır.
+    expect(payload.data.phrase).toBe('ipotek AND "türk lirası" kaldırılması');
+    expect(payload.data.sortFields).toBeUndefined();
+    expect(payload.data.sortDirection).toBeUndefined();
   });
 });

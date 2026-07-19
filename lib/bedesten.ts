@@ -123,15 +123,20 @@ export async function searchDecisions(params: {
   endDate?: string;
   page?: number;
 }): Promise<{ total: number; decisions: DecisionSummary[] }> {
-  const phrase = params.phrase.trim();
+  // Bedesten "Sadece harf ve rakam" doğrulamasıyla `*` gibi karakterli
+  // sorguların tamamını reddeder; AND/OR/NOT, çift tırnak, parantez ve /
+  // canlıda kabul edilir. Sıralama alanı gönderilmez: varsayılan sıralama
+  // alaka düzenidir, KARAR_TARIHI ise ilgisiz güncel kararları öne alır.
+  const phrase = params.phrase
+    .replace(/[^\p{L}\p{N}\s"()/]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   if (phrase.length < 3) throw new Error("Arama ifadesi en az 3 karakter olmalı");
   const data: Record<string, unknown> = {
     pageSize: 10,
     pageNumber: Math.min(20, Math.max(1, params.page ?? 1)),
     itemTypeList: COURT_TYPES[params.court] ?? COURT_TYPES.YARGITAY,
     phrase,
-    sortFields: ["KARAR_TARIHI"],
-    sortDirection: "desc",
   };
   const chamber = resolveChamber(params.chamber);
   if (chamber) data.birimAdi = chamber;

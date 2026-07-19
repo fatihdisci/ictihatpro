@@ -78,7 +78,14 @@ Kendi alan adınız varsa ayrıca:
 
 Vercel'de dosya sistemi kalıcı değildir. Bu nedenle yerel dosya önbelleği performans garantisi vermez; uygulama önbellek olmadan da çalışır.
 
-Uygulama varsayılan olarak en fazla 6 araştırma turunda 3 doğrulanmış karar inceler. Daha kapsamlı ama daha yavaş araştırma için isteğe bağlı olarak `MAX_RESEARCH_TURNS`, `MAX_SOURCES` ve `MAX_EVIDENCE_CHARS` ortam değişkenlerini artırabilirsiniz.
+Uygulama varsayılan olarak en fazla 8 araştırma turunda 3 doğrulanmış karar inceler. Daha kapsamlı ama daha yavaş araştırma için isteğe bağlı olarak `MAX_RESEARCH_TURNS`, `MAX_SOURCES` ve `MAX_EVIDENCE_CHARS` ortam değişkenlerini artırabilirsiniz.
+
+Bedesten arama davranışına ilişkin canlıda doğrulanmış notlar:
+
+- Arama alaka sırasıyla döner; sorguya tarih sıralaması eklenmez.
+- `AND`, `OR`, `NOT`, parantez ve çift tırnak desteklenir; `*` içeren sorgular servis tarafından bütünüyle reddedildiği için sorgulardan ayıklanır.
+- Eşleştirme morfolojiktir: `ipotek` araması `ipoteğin` geçen kararları da bulur.
+- Kaynak kartındaki "Resmî sistem" linki kararın kendi sayfasına (`mevzuat.adalet.gov.tr/ictihat/<belgeNo>`) gider ve "Tam metin" düğmesi kararın sunucuda doğrulanan metnini uygulama içinde açar.
 
 ## ChatGPT MCP
 

@@ -76,7 +76,14 @@ export function createMcpServer(): McpServer {
       description:
         "Türk hukukuna ilişkin doğal dildeki her içtihat/karar/dava sorusunda, kullanıcı 'ara' demese bile önce çağır. UYAP Bedesten'de Yargıtay, Danıştay, yerel hukuk, BAM hukuk ve kanun yararına bozma kararlarını arar. Sonuçlar yalnızca aday künyelerdir; hukukî cevap yazmadan önce seçilen sonuçlar ictihat_getir ile tam metinden doğrulanmalıdır.",
       inputSchema: {
-        ifade: z.string().trim().min(3).max(500).describe("Karar metninde aranacak hukukî ifade veya tam cümle"),
+        ifade: z
+          .string()
+          .trim()
+          .min(3)
+          .max(500)
+          .describe(
+            'Karar metninde aranacak hukukî ifade. AND, OR, NOT, parantez ve çift tırnak desteklenir (ör. ipotek AND "türk lirası"); * joker karakteri kullanılamaz. Sonuçlar alaka sırasındadır.'
+          ),
         mahkeme: courtSchema.default("HEPSI").describe("Aranacak karar koleksiyonu"),
         daire: z
           .string()
