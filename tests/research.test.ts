@@ -3,6 +3,7 @@ import { bedestenBooleanQuery, decisionMatchesQuestion, researchAndAnswer } from
 import { complete } from "../lib/deepseek";
 import { getDecisionDocument, searchDecisions, verifyDecisionDocument } from "../lib/bedesten";
 import { readDecisionCache, writeDecisionCache } from "../lib/cache";
+import { getLegislationDocument, searchLegislation } from "../lib/mevzuat";
 
 vi.mock("../lib/deepseek", () => ({ complete: vi.fn() }));
 vi.mock("../lib/bedesten", () => ({
@@ -12,6 +13,7 @@ vi.mock("../lib/bedesten", () => ({
   verifyDecisionDocument: vi.fn(),
 }));
 vi.mock("../lib/cache", () => ({ readDecisionCache: vi.fn(), writeDecisionCache: vi.fn() }));
+vi.mock("../lib/mevzuat", () => ({ searchLegislation: vi.fn(), getLegislationDocument: vi.fn() }));
 
 function decisionSummary(documentId: string, overrides: Record<string, unknown> = {}) {
   return {
@@ -44,6 +46,8 @@ beforeEach(() => {
   vi.mocked(verifyDecisionDocument).mockReset();
   vi.mocked(readDecisionCache).mockReset();
   vi.mocked(writeDecisionCache).mockReset();
+  vi.mocked(searchLegislation).mockReset();
+  vi.mocked(getLegislationDocument).mockReset();
   vi.mocked(readDecisionCache).mockResolvedValue(null);
   vi.mocked(writeDecisionCache).mockResolvedValue(undefined);
   vi.mocked(verifyDecisionDocument).mockReturnValue({ verified: true });
@@ -264,5 +268,59 @@ describe("araştırma sentezi", () => {
     expect(answer.title).toBe("Doğrulanmış kaynaklar getirildi");
     expect(answer.sources).toHaveLength(1);
     expect(answer.limitations[0]).toContain("ayrıştırılamadığı");
+  });
+
+  it("kaynak modunda ilgisiz mevzuatı eler ve doğrudan ilgili maddeleri döndürür", async () => {
+    vi.mocked(searchLegislation).mockResolvedValue({
+      total: 2,
+      documents: [
+        {
+          legislationId: "kosgeb",
+          number: "42366",
+          name: "KOSGEB İnsan Kaynakları Yönetmeliği",
+          type: "Yönetmelik",
+          series: null,
+          officialGazetteDate: null,
+          officialGazetteNumber: null,
+          url: null,
+        },
+        {
+          legislationId: "tmk",
+          number: "4721",
+          name: "Türk Medeni Kanunu",
+          type: "Kanun",
+          series: null,
+          officialGazetteDate: "08.12.2001",
+          officialGazetteNumber: "24607",
+          url: null,
+        },
+      ],
+    });
+    vi.mocked(getLegislationDocument).mockImplementation(async (id) => ({
+      mimeType: "text/html",
+      text: id === "kosgeb"
+        ? "Personel görevde yükselme, izin ve kadro işlemleri hakkında hükümler. ".repeat(12)
+        : `MADDE 166\nEvlilik birliği, ortak hayatı sürdürmeleri kendilerinden beklenmeyecek derecede temelinden sarsılmış olursa eşlerden her biri boşanma davası açabilir.\n\nMADDE 174\nMevcut veya beklenen menfaatleri boşanma yüzünden zedelenen kusursuz veya daha az kusurlu taraf, kusurlu taraftan uygun bir maddi tazminat isteyebilir. Kişilik hakkı saldırıya uğrayan taraf manevi tazminat isteyebilir.\n\nMADDE 175\nBoşanma yüzünden yoksulluğa düşecek taraf nafaka isteyebilir.`,
+    }));
+    vi.mocked(complete)
+      .mockResolvedValueOnce(toolCallMessage("mevzuat_ara", { ifade: "boşanma kusur tazminat" }))
+      .mockResolvedValueOnce(toolCallMessage("mevzuat_oku", { mevzuat_id: "kosgeb" }))
+      .mockResolvedValueOnce({ role: "assistant", content: "Arama tamamlandı." });
+
+    const answer = await researchAndAnswer(
+      "Boşanmada kusur belirlemesi ile maddi ve manevi tazminat koşulları nelerdir?",
+      vi.fn(),
+      undefined,
+      ["MEVZUAT"],
+      "sources"
+    );
+
+    expect(answer.mode).toBe("sources");
+    expect(answer.summary).toBe("");
+    expect(answer.sources).toHaveLength(1);
+    expect(answer.sources[0]).toMatchObject({ kind: "legislation", name: "Türk Medeni Kanunu" });
+    expect(answer.sources[0].excerpt).toContain("MADDE 174");
+    expect(answer.sources.some((source) => source.kind === "legislation" && source.name.includes("KOSGEB"))).toBe(false);
+    expect(vi.mocked(complete)).toHaveBeenCalledTimes(3);
   });
 });

@@ -21,6 +21,7 @@ type DecisionSource = DecisionSummary & {
   id: string;
   sourceUrl: string;
   evidenceComplete: boolean;
+  excerpt: string;
 };
 
 type LegislationSource = LegislationSummary & {
@@ -28,12 +29,14 @@ type LegislationSource = LegislationSummary & {
   id: string;
   sourceUrl: string;
   evidenceComplete: boolean;
+  excerpt: string;
 };
 
 export type VerifiedSource = DecisionSource | LegislationSource;
 type Evidence = VerifiedSource & { body: string };
 
 export type VerifiedAnswer = {
+  mode?: "analysis" | "sources";
   title: string;
   summary: string;
   summarySourceIds: string[];
@@ -294,6 +297,38 @@ function evidenceText(body: string, question: string, maxChars = 240_000): {
   };
 }
 
+function decisionExcerpt(body: string, question: string, maxChars = 4200): string {
+  const terms = searchableTerms(question);
+  const lower = body.toLocaleLowerCase("tr-TR");
+  const hits = terms
+    .map((term) => lower.indexOf(searchStem(term)))
+    .filter((index) => index >= 0);
+  const center = hits[0] ?? 0;
+  const start = Math.max(0, center - 900);
+  return body.slice(start, start + maxChars).trim();
+}
+
+function legislationExcerpt(body: string, question: string, maxChars = 6500): string {
+  const terms = searchableTerms(question);
+  const articlePattern = /(?:^|\n)(?:#{1,6}\s*)?(?:geçici\s+)?madde\s+\d+[\w/-]*/gimu;
+  const starts = [...body.matchAll(articlePattern)].map((match) => match.index ?? 0);
+  if (starts.length === 0) return decisionExcerpt(body, question, maxChars);
+
+  const sections = starts.map((start, index) => {
+    const text = body.slice(start, starts[index + 1] ?? body.length).trim();
+    const lower = text.toLocaleLowerCase("tr-TR");
+    const score = terms.filter((term) => lower.includes(searchStem(term))).length;
+    return { start, text, score };
+  });
+  const selected = sections
+    .filter((section) => section.score > 0)
+    .sort((a, b) => b.score - a.score || a.start - b.start)
+    .slice(0, 3)
+    .sort((a, b) => a.start - b.start)
+    .map((section) => section.text);
+  return (selected.length ? selected.join("\n\n---\n\n") : decisionExcerpt(body, question, maxChars)).slice(0, maxChars).trim();
+}
+
 function sourceLabel(source: DecisionSummary | VerifiedSource): string {
   if ("kind" in source && source.kind === "legislation") {
     return [source.name, source.number && `${source.number} sayılı`, source.type, source.officialGazetteDate]
@@ -301,6 +336,12 @@ function sourceLabel(source: DecisionSummary | VerifiedSource): string {
       .join(", ");
   }
   return [source.court, source.chamber, source.esasNo && `${source.esasNo} E.`, source.kararNo && `${source.kararNo} K.`, source.date]
+    .filter(Boolean)
+    .join(", ");
+}
+
+function legislationLabel(source: LegislationSummary): string {
+  return [source.name, source.number && `${source.number} sayılı`, source.type, source.officialGazetteDate]
     .filter(Boolean)
     .join(", ");
 }
@@ -339,6 +380,7 @@ async function verifyCandidate(
     id,
     sourceUrl: `https://mevzuat.adalet.gov.tr/ictihat/${summary.documentId}`,
     evidenceComplete: selected.complete,
+    excerpt: decisionExcerpt(document.text, question),
     body: selected.text,
   };
   evidence.set(`decision:${summary.documentId}`, item);
@@ -358,6 +400,7 @@ async function verifyCandidate(
 
 async function verifyLegislationCandidate(
   summary: LegislationSummary,
+  question: string,
   evidence: Map<string, Evidence>,
   maxSources: number,
   maxEvidenceChars: number,
@@ -368,16 +411,24 @@ async function verifyLegislationCandidate(
   if (existing) return { status: "already_verified", id: existing.id, metadata: sourceLabel(existing) };
   if (evidence.size >= maxSources) throw new Error(`En fazla ${maxSources} kaynak okunabilir`);
 
-  onProgress({ type: "status", message: "Mevzuat metni açılıyor", detail: sourceLabel({ ...summary, kind: "legislation", id: "", sourceUrl: "", evidenceComplete: true }) });
+  onProgress({ type: "status", message: "Mevzuat metni açılıyor", detail: legislationLabel(summary) });
   const document = await getLegislationDocument(summary.legislationId);
   if (document.text.trim().length < 120) throw new Error("Mevzuat metni olağandışı kısa");
+  const relevance = decisionMatchesQuestion(question, document.text);
+  if (relevance.matches.length < relevance.required) {
+    throw new Error(
+      `Mevzuat soru ile yeterince ilgili değil (eşleşen kavramlar: ${relevance.matches.join(", ") || "yok"})`
+    );
+  }
+  const selected = evidenceText(document.text, question, maxEvidenceChars);
   const item: Evidence = {
     ...summary,
     kind: "legislation",
     id: `M${evidence.size + 1}`,
     sourceUrl: summary.url ?? "https://mevzuat.adalet.gov.tr/",
-    evidenceComplete: document.text.length <= maxEvidenceChars,
-    body: document.text.slice(0, maxEvidenceChars),
+    evidenceComplete: selected.complete,
+    excerpt: legislationExcerpt(document.text, question),
+    body: selected.text,
   };
   evidence.set(key, item);
   return {
@@ -452,7 +503,8 @@ export async function researchAndAnswer(
   question: string,
   onProgress: (event: ProgressEvent) => void,
   signal?: AbortSignal,
-  selectedSources: ResearchSource[] = DEFAULT_RESEARCH_SOURCES
+  selectedSources: ResearchSource[] = DEFAULT_RESEARCH_SOURCES,
+  outputMode: "analysis" | "sources" = "analysis"
 ): Promise<VerifiedAnswer> {
   const selected = RESEARCH_SOURCES.filter((source) => selectedSources.includes(source));
   if (selected.length === 0) throw new Error("En az bir araştırma kaynağı seçilmelidir");
@@ -546,7 +598,7 @@ export async function researchAndAnswer(
           const legislationId = String(args.mevzuat_id ?? "");
           const summary = legislationCandidates.get(legislationId);
           if (!summary) throw new Error("Bu mevzuat önce arama sonucunda görülmedi");
-          result = await verifyLegislationCandidate(summary, evidence, maxSources, maxEvidenceChars, onProgress);
+          result = await verifyLegislationCandidate(summary, question, evidence, maxSources, maxEvidenceChars, onProgress);
         } else {
           throw new Error("Bilinmeyen araç");
         }
@@ -585,7 +637,7 @@ export async function researchAndAnswer(
     const firstLegislation = [...legislationCandidates.values()][0];
     if (firstLegislation && evidence.size < maxSources) {
       try {
-        await verifyLegislationCandidate(firstLegislation, evidence, maxSources, maxEvidenceChars, onProgress);
+        await verifyLegislationCandidate(firstLegislation, question, evidence, maxSources, maxEvidenceChars, onProgress);
       } catch {
         // Seçilen mevzuat kapsamındaki ilk aday indirilemezse genel tamamlama adımı devam eder.
       }
@@ -618,7 +670,7 @@ export async function researchAndAnswer(
       if (evidence.has(`legislation:${summary.legislationId}`)) continue;
       attempts += 1;
       try {
-        await verifyLegislationCandidate(summary, evidence, maxSources, maxEvidenceChars, onProgress);
+        await verifyLegislationCandidate(summary, question, evidence, maxSources, maxEvidenceChars, onProgress);
       } catch {
         // Bozuk veya indirilemeyen bir düzenleme sonucu araştırmayı durdurmaz.
       }
@@ -634,6 +686,18 @@ export async function researchAndAnswer(
       sections: [],
       limitations: ["Arama ifadelerini veya mahkeme/daire kapsamını değiştirerek yeniden deneyebilirsiniz."],
       sources: [],
+    };
+  }
+
+  if (outputMode === "sources") {
+    return {
+      mode: "sources",
+      title: "Bulunan kaynaklar",
+      summary: "",
+      summarySourceIds: [],
+      sections: [],
+      limitations: [],
+      sources: sources.map(({ body: _body, ...source }) => source),
     };
   }
 

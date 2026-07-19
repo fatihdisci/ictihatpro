@@ -48,7 +48,7 @@ export async function POST(request: Request) {
     async start(controller) {
       const send = (event: unknown) => controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
       try {
-        const answer = await researchAndAnswer(question, send, request.signal, sources);
+        const answer = await researchAndAnswer(question, send, request.signal, sources, "sources");
         send({ type: "answer", answer });
         send({ type: "done" });
       } catch (error) {

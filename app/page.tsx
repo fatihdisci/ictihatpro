@@ -15,6 +15,7 @@ type DecisionSource = {
   date: string | null;
   sourceUrl: string;
   evidenceComplete: boolean;
+  excerpt: string;
 };
 
 type LegislationSource = {
@@ -29,6 +30,7 @@ type LegislationSource = {
   officialGazetteNumber: string | null;
   sourceUrl: string;
   evidenceComplete: boolean;
+  excerpt: string;
 };
 
 type Source = DecisionSource | LegislationSource;
@@ -44,6 +46,7 @@ const SOURCE_OPTIONS: Array<{ id: ResearchSource; label: string; shortLabel: str
 ];
 
 type Answer = {
+  mode?: "analysis" | "sources";
   title: string;
   summary: string;
   summarySourceIds: string[];
@@ -151,6 +154,10 @@ function SourceCard({ source }: { source: Source }) {
             {!source.evidenceComplete && <span className="partial">İlgili bölüm incelendi</span>}
           </div>
         </>}
+        <div className="source-excerpt">
+          <div className="source-excerpt-label">İlgili bölüm</div>
+          <Markdown>{source.excerpt}</Markdown>
+        </div>
         {source.kind === "decision" && open && (
           <div className="decision-text" aria-live="polite">
             {decision?.status === "ready" && (
@@ -183,6 +190,24 @@ function SourceCard({ source }: { source: Source }) {
 
 function AnswerView({ answer }: { answer: Answer }) {
   const isEmpty = answer.sources.length === 0;
+  if (answer.mode === "sources") {
+    return (
+      <article className={`answer-card source-results${isEmpty ? " is-empty" : ""}`}>
+        <div className="source-results-heading">
+          <div>
+            <div className="answer-kicker">Arama sonucu</div>
+            <h2>Bulunan kaynaklar</h2>
+          </div>
+          <span>{answer.sources.length} kaynak</span>
+        </div>
+        {isEmpty ? <p>Seçilen kapsamda ilgili bir kaynak bulunamadı.</p> : (
+          <div className="source-list">
+            {answer.sources.map((source) => <SourceCard source={source} key={`${source.kind}-${source.id}`} />)}
+          </div>
+        )}
+      </article>
+    );
+  }
   return (
     <article className={`answer-card${isEmpty ? " is-empty" : ""}`}>
       <div className="answer-kicker">Doğrulanmış araştırma özeti</div>
