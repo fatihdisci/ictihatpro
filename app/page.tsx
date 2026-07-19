@@ -32,7 +32,7 @@ function CitationBadges({ ids }: { ids: string[] }) {
   return (
     <span className="citations" aria-label="Bu bölümün kaynakları">
       {ids.map((id) => (
-        <a key={id} href={`#source-${id}`} className="citation">{id}</a>
+        <a key={id} href={`#source-${id}`} className="citation" aria-label={`Kaynak ${id}'e git`}>{id}</a>
       ))}
     </span>
   );
@@ -50,6 +50,7 @@ type DecisionText =
 function SourceCard({ source }: { source: Source }) {
   const [open, setOpen] = useState(false);
   const [decision, setDecision] = useState<DecisionText | null>(null);
+  const [copied, setCopied] = useState(false);
 
   async function toggleText() {
     if (open) {
@@ -69,6 +70,17 @@ function SourceCard({ source }: { source: Source }) {
     }
   }
 
+  async function copyText() {
+    if (decision?.status !== "ready") return;
+    try {
+      await navigator.clipboard.writeText(decision.text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Pano izni yoksa sessizce geç; düğme metni değişmeyerek zaten geri bildirim verir.
+    }
+  }
+
   return (
     <article className="source" id={`source-${source.id}`}>
       <div className="source-id">{source.id}</div>
@@ -85,6 +97,11 @@ function SourceCard({ source }: { source: Source }) {
         </div>
         {open && (
           <div className="decision-text" aria-live="polite">
+            {decision?.status === "ready" && (
+              <div className="decision-head">
+                <button className="decision-copy" onClick={copyText}>{copied ? "Kopyalandı" : "Metni kopyala"}</button>
+              </div>
+            )}
             {(!decision || decision.status === "loading") && <p className="decision-wait">Karar metni yükleniyor…</p>}
             {decision?.status === "error" && <p className="decision-error">{decision.message}</p>}
             {decision?.status === "ready" &&
@@ -97,7 +114,7 @@ function SourceCard({ source }: { source: Source }) {
         )}
       </div>
       <div className="source-actions">
-        <button className="official-link as-button" onClick={toggleText}>
+        <button className="official-link as-button" onClick={toggleText} aria-expanded={open}>
           {open ? "Metni gizle" : "Tam metin"}
         </button>
         <a href={source.sourceUrl} target="_blank" rel="noreferrer" className="official-link">
@@ -109,8 +126,9 @@ function SourceCard({ source }: { source: Source }) {
 }
 
 function AnswerView({ answer }: { answer: Answer }) {
+  const isEmpty = answer.sources.length === 0;
   return (
-    <article className="answer-card">
+    <article className={`answer-card${isEmpty ? " is-empty" : ""}`}>
       <div className="answer-kicker">Doğrulanmış araştırma özeti</div>
       <h2>{answer.title}</h2>
       <section className="summary">
@@ -163,8 +181,12 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [detail, setDetail] = useState("");
-  const [error, setError] = useState("");
+  const [progressCount, setProgressCount] = useState(0);
+  const [error, setError] = useState<{ message: string; isRateLimit: boolean } | null>(null);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
   const endRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
+  const lastQuestionRef = useRef("");
 
   useEffect(() => {
     fetch("/api/login", { cache: "no-store" })
@@ -183,6 +205,41 @@ export default function Home() {
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [researches, status, error]);
+
+  // layout.tsx'teki beforeInteractive betiği data-theme'i hidrasyondan önce
+  // zaten uygular; burada yalnızca React durumunu o değerle senkronlarız.
+  useEffect(() => {
+    const current = document.documentElement.getAttribute("data-theme");
+    setTheme(current === "dark" ? "dark" : "light");
+  }, []);
+
+  // Composer'ın gerçek yüksekliğini --composer-h değişkenine yazar ki
+  // app-shell alt boşluğu, çok satırlı sorularda içeriği kapatmasın.
+  useEffect(() => {
+    if (!authenticated) return;
+    const el = composerRef.current;
+    if (!el) return;
+    const update = () => document.documentElement.style.setProperty("--composer-h", `${el.offsetHeight}px`);
+    update();
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(update) : null;
+    observer?.observe(el);
+    window.addEventListener("resize", update);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, [authenticated]);
+
+  function toggleTheme() {
+    const next = theme === "light" ? "dark" : "light";
+    setTheme(next);
+    document.documentElement.setAttribute("data-theme", next);
+    try {
+      window.localStorage.setItem("ictihat-theme", next);
+    } catch {
+      // Gizli sekme gibi kısıtlı ortamlarda tema yine de bu oturumda uygulanır.
+    }
+  }
 
   async function login() {
     setLoginError("");
@@ -206,14 +263,13 @@ export default function Home() {
     setResearches([]);
   }
 
-  async function submit() {
-    const current = question.trim();
-    if (current.length < 5 || busy) return;
+  async function runResearch(current: string) {
     setBusy(true);
-    setError("");
+    setError(null);
     setStatus("Araştırma hazırlanıyor");
     setDetail("");
-    setQuestion("");
+    setProgressCount(0);
+    lastQuestionRef.current = current;
 
     try {
       const response = await fetch("/api/chat", {
@@ -224,7 +280,9 @@ export default function Home() {
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
         if (response.status === 401) setAuthenticated(false);
-        throw new Error(data.error || `HTTP ${response.status}`);
+        setError({ message: data.error || `HTTP ${response.status}`, isRateLimit: response.status === 429 });
+        setQuestion(current);
+        return;
       }
       if (!response.body) throw new Error("Yanıt akışı açılamadı");
 
@@ -243,6 +301,9 @@ export default function Home() {
           if (event.type === "status") {
             setStatus(event.message || "Araştırılıyor");
             setDetail(event.detail || "");
+            if (event.message === "Karar metni doğrulanıyor" || event.message === "Ek karar sunucuda doğrulanıyor") {
+              setProgressCount((count) => count + 1);
+            }
           } else if (event.type === "warning") {
             setDetail(event.message || "");
           } else if (event.type === "answer") {
@@ -255,7 +316,7 @@ export default function Home() {
         }
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Bilinmeyen hata");
+      setError({ message: caught instanceof Error ? caught.message : "Bilinmeyen hata", isRateLimit: false });
       setQuestion(current);
     } finally {
       setBusy(false);
@@ -264,13 +325,25 @@ export default function Home() {
     }
   }
 
+  async function submit() {
+    const current = question.trim();
+    if (current.length < 5 || busy) return;
+    setQuestion("");
+    await runResearch(current);
+  }
+
+  function retry() {
+    if (busy || !lastQuestionRef.current) return;
+    runResearch(lastQuestionRef.current);
+  }
+
   if (authenticated === null) {
     return <main className="center"><div className="loader" /><p>Güvenli oturum kontrol ediliyor…</p></main>;
   }
 
   if (!authenticated) {
     return (
-      <main className="login-shell">
+      <main className="login-shell" id="main-content">
         <section className="login-panel">
           <div className="seal">İA</div>
           <div className="eyebrow">Kişisel hukuk araştırma alanı</div>
@@ -296,7 +369,7 @@ export default function Home() {
   }
 
   return (
-    <main className="app-shell">
+    <main className="app-shell" id="main-content">
       <header className="topbar">
         <div className="identity">
           <div className="seal small">İA</div>
@@ -304,6 +377,13 @@ export default function Home() {
         </div>
         <div className="top-actions">
           <span className="model-badge">{model}</span>
+          <button
+            className="theme-toggle"
+            onClick={toggleTheme}
+            aria-label={theme === "dark" ? "Açık temaya geç" : "Koyu temaya geç"}
+          >
+            {theme === "dark" ? "☀" : "☾"}
+          </button>
           <button className="text-button" onClick={logout}>Çıkış</button>
         </div>
       </header>
@@ -332,14 +412,26 @@ export default function Home() {
         {busy && (
           <section className="progress" aria-live="polite">
             <div className="progress-line"><div /></div>
-            <div><strong>{status || "Araştırılıyor"}</strong>{detail && <span>{detail}</span>}</div>
+            <div>
+              <strong>
+                {progressCount > 0 && <span className="progress-count">{progressCount}</span>}
+                {status || "Araştırılıyor"}
+              </strong>
+              {detail && <span>{detail}</span>}
+            </div>
           </section>
         )}
-        {error && <div className="request-error" role="alert"><strong>Araştırma tamamlanamadı</strong><span>{error}</span></div>}
+        {error && (
+          <div className={`request-error${error.isRateLimit ? " is-rate-limit" : ""}`} role="alert">
+            <strong>{error.isRateLimit ? "Çok sık istek gönderildi" : "Araştırma tamamlanamadı"}</strong>
+            <span>{error.message}</span>
+            <button className="retry-button" onClick={retry} disabled={busy}>Tekrar dene</button>
+          </div>
+        )}
         <div ref={endRef} />
       </div>
 
-      <div className="composer-wrap">
+      <div className="composer-wrap" ref={composerRef}>
         <div className="composer">
           <textarea
             value={question}
