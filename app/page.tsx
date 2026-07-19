@@ -27,6 +27,21 @@ type Answer = {
 
 type Research = { question: string; answer: Answer };
 
+const QUICK_SEARCHES = [
+  { category: "İş", label: "İşe iade · geçerli fesih", query: "İşe iade davasında geçerli fesih ve ispat yükü hangi ölçütlerle değerlendirilir?" },
+  { category: "İş", label: "Kıdem ve ihbar tazminatı", query: "Kıdem ve ihbar tazminatında ücretin tespiti, faiz ve zamanaşımı nasıl uygulanır?" },
+  { category: "İş", label: "Fazla çalışma alacağı", query: "Fazla çalışma alacağında ispat, tanık beyanı ve hesaplama nasıl değerlendirilir?" },
+  { category: "Kira", label: "İhtiyaç nedeniyle tahliye", query: "Konut ihtiyacı nedeniyle tahliye davasının şartları ve ispatı nasıl değerlendirilir?" },
+  { category: "Kira", label: "Kira tespit davası", query: "Kira tespit davasında emsal kira bedeli ve hakkaniyet indirimi nasıl belirlenir?" },
+  { category: "Aile", label: "Boşanma · kusur ve tazminat", query: "Boşanma davasında kusur belirlemesi ile maddi ve manevi tazminat koşulları nasıl değerlendirilir?" },
+  { category: "Aile", label: "Velayetin değiştirilmesi", query: "Velayetin değiştirilmesi davasında çocuğun üstün yararı hangi ölçütlerle değerlendirilir?" },
+  { category: "Aile", label: "Yoksulluk nafakası", query: "Yoksulluk nafakasının artırılması veya kaldırılmasında hangi ölçütler dikkate alınır?" },
+  { category: "İcra", label: "İtirazın iptali", query: "İtirazın iptali davasında icra inkâr tazminatının şartları nelerdir?" },
+  { category: "Tazminat", label: "Trafik kazası · değer kaybı", query: "Trafik kazası nedeniyle araç değer kaybı tazminatında hesaplama ve ispat nasıl yapılır?" },
+  { category: "Ticaret", label: "Ayıplı mal ve ayıp ihbarı", query: "Tacirler arası satımda ayıp ihbarının süresi ve şekli nasıl değerlendirilir?" },
+  { category: "Taşınmaz", label: "Ortaklığın giderilmesi", query: "Ortaklığın giderilmesi davasında aynen taksim ve satış koşulları nasıl değerlendirilir?" },
+] as const;
+
 function CitationBadges({ ids }: { ids: string[] }) {
   if (!ids.length) return null;
   return (
@@ -397,33 +412,25 @@ export default function Home() {
             <div className="welcome-grid">
               <div className="welcome-copy">
                 <div className="welcome-overline"><span>ARAŞTIRMA</span><span>BEDesten</span></div>
-                <h1>İçtihat<br /><em>araştırması</em></h1>
+                <h1>İçtihat araştırması</h1>
                 <p>Uyuşmazlığı, aradığınız hukukî ölçütü veya karar bilgilerini yazın. Sonuçlar kaynaklarıyla birlikte burada görünür.</p>
               </div>
-              <aside className="research-method" aria-label="Sorgu ipuçları">
-                <div className="method-header"><span>SORGUNUZDA OLSUN</span><b>İPUÇLARI</b></div>
-                <ol>
-                  <li><span>01</span><div><strong>Konu</strong><p>Uyuşmazlığı kısa ve açık biçimde yazın.</p></div></li>
-                  <li><span>02</span><div><strong>Ölçüt</strong><p>Aradığınız hukukî sorunu ekleyin.</p></div></li>
-                  <li><span>03</span><div><strong>Sınır</strong><p>Varsa daire, tarih veya karar numarasını belirtin.</p></div></li>
-                </ol>
-                <div className="method-note">Birden fazla ayrık konu için ayrı soru yazın.</div>
-              </aside>
             </div>
-            <div className="principles" aria-label="Araştırma notları">
-              <div><b>01</b><span>Her soru ayrı yürütülür</span></div>
-              <div><b>02</b><span>Kaynaklar yanıtın altında listelenir</span></div>
-              <div><b>03</b><span>İhtiyacınız oldukça ayrıntı ekleyin</span></div>
-            </div>
-            <div className="prompt-suggestions" aria-label="Örnek araştırma soruları">
-              <span>Örnek sorular</span>
-              {[
-                "İşe iade davasında fesih bildiriminin geçersizliği hangi ölçütlerle değerlendirilir?",
-                "Tacirler arası satımda ayıba karşı tekeffül hükümleri nasıl uygulanır?",
-              ].map((prompt) => (
-                <button key={prompt} onClick={() => setQuestion(prompt)} disabled={busy}>{prompt}</button>
-              ))}
-            </div>
+            <section className="quick-searches" aria-label="Hazır arama kalıpları">
+              <div className="quick-searches-heading">
+                <div><span>HAZIR ARAMALAR</span><h2>Sık kullanılanlar</h2></div>
+                <p>Bir kalıp seçip ihtiyacınıza göre düzenleyin.</p>
+              </div>
+              <div className="quick-search-grid">
+                {QUICK_SEARCHES.map((search) => (
+                  <button key={search.label} onClick={() => setQuestion(search.query)} disabled={busy}>
+                    <span>{search.category}</span>
+                    <strong>{search.label}</strong>
+                    <b aria-hidden="true">↗</b>
+                  </button>
+                ))}
+              </div>
+            </section>
           </section>
         )}
 
