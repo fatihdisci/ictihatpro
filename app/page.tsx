@@ -1,365 +1,489 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+// İçtihat Asistanı — ana sayfa istemcisi.
+// NDJSON tel şeması: progress / sources / answer (yeni) + text / tool / error / done (geriye uyumlu).
 
-type Source = {
-  id: string;
-  documentId: string;
-  court: string | null;
-  chamber: string | null;
-  esasNo: string | null;
-  kararNo: string | null;
-  date: string | null;
-  sourceUrl: string;
-  evidenceComplete: boolean;
+import { useCallback, useEffect, useRef, useState } from "react";
+import { renderContent } from "./components/renderContent";
+import { SourceCard } from "./components/SourceCard";
+import { SourceStrip } from "./components/SourceStrip";
+import { ProgressBar, RateCountdown } from "./components/ProgressBar";
+import type { ErrorInfo, Msg, Source, Status, Theme } from "./components/types";
+
+const ARAC_ETIKET: Record<string, string> = {
+  ictihat_ara: "Kararlarda aranıyor",
+  ictihat_getir: "Karar metni okunuyor",
 };
+const STORAGE_THEME = "ictihat-theme";
+const COMPOSER_MAX_H = 200;
 
-type Answer = {
-  title: string;
-  summary: string;
-  summarySourceIds: string[];
-  sections: Array<{ heading: string; text: string; sourceIds: string[] }>;
-  limitations: string[];
-  sources: Source[];
-};
+// ---------- Tema yardımcıları (yalnızca istemci) ----------
 
-type Research = { question: string; answer: Answer };
-
-function CitationBadges({ ids }: { ids: string[] }) {
-  if (!ids.length) return null;
-  return (
-    <span className="citations" aria-label="Bu bölümün kaynakları">
-      {ids.map((id) => (
-        <a key={id} href={`#source-${id}`} className="citation">{id}</a>
-      ))}
-    </span>
-  );
-}
-
-function Markdown({ children }: { children: string }) {
-  return <ReactMarkdown remarkPlugins={[remarkGfm]}>{children}</ReactMarkdown>;
-}
-
-type DecisionText =
-  | { status: "loading" }
-  | { status: "error"; message: string }
-  | { status: "ready"; text: string; mimeType: string };
-
-function SourceCard({ source }: { source: Source }) {
-  const [open, setOpen] = useState(false);
-  const [decision, setDecision] = useState<DecisionText | null>(null);
-
-  async function toggleText() {
-    if (open) {
-      setOpen(false);
-      return;
-    }
-    setOpen(true);
-    if (decision?.status === "ready" || decision?.status === "loading") return;
-    setDecision({ status: "loading" });
-    try {
-      const response = await fetch(`/api/decision?id=${encodeURIComponent(source.documentId)}`);
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-      setDecision({ status: "ready", text: data.text, mimeType: data.mimeType });
-    } catch (caught) {
-      setDecision({ status: "error", message: caught instanceof Error ? caught.message : "Karar metni alınamadı" });
-    }
+function readInitialTheme(): Theme {
+  if (typeof window === "undefined") return "light";
+  try {
+    const saved = window.localStorage.getItem(STORAGE_THEME);
+    if (saved === "light" || saved === "dark") return saved;
+  } catch {
+    /* yoksay */
   }
-
-  return (
-    <article className="source" id={`source-${source.id}`}>
-      <div className="source-id">{source.id}</div>
-      <div className="source-main">
-        <strong>{[source.court, source.chamber].filter(Boolean).join(" · ") || "Mahkeme bilgisi yok"}</strong>
-        <div className="source-meta">
-          <span>{source.esasNo ? `${source.esasNo} E.` : "Esas no doğrulanamadı"}</span>
-          <span>{source.kararNo ? `${source.kararNo} K.` : "Karar no doğrulanamadı"}</span>
-          <span>{source.date ?? "Tarih verisi doğrulanamadı"}</span>
-        </div>
-        <div className="source-foot">
-          <span>Bedesten belge no: {source.documentId}</span>
-          {!source.evidenceComplete && <span className="partial">Seçili pasajlar incelendi</span>}
-        </div>
-        {open && (
-          <div className="decision-text" aria-live="polite">
-            {(!decision || decision.status === "loading") && <p className="decision-wait">Karar metni yükleniyor…</p>}
-            {decision?.status === "error" && <p className="decision-error">{decision.message}</p>}
-            {decision?.status === "ready" &&
-              (decision.mimeType.includes("pdf") ? (
-                <pre>{decision.text}</pre>
-              ) : (
-                <Markdown>{decision.text}</Markdown>
-              ))}
-          </div>
-        )}
-      </div>
-      <div className="source-actions">
-        <button className="official-link as-button" onClick={toggleText}>
-          {open ? "Metni gizle" : "Tam metin"}
-        </button>
-        <a href={source.sourceUrl} target="_blank" rel="noreferrer" className="official-link">
-          Resmî sistem
-        </a>
-      </div>
-    </article>
-  );
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-function AnswerView({ answer }: { answer: Answer }) {
-  return (
-    <article className="answer-card">
-      <div className="answer-kicker">Doğrulanmış araştırma özeti</div>
-      <h2>{answer.title}</h2>
-      <section className="summary">
-        <Markdown>{answer.summary}</Markdown>
-        <CitationBadges ids={answer.summarySourceIds} />
-      </section>
-
-      {answer.sections.map((section, index) => (
-        <section className="answer-section" key={`${section.heading}-${index}`}>
-          <h3>{section.heading}</h3>
-          <Markdown>{section.text}</Markdown>
-          <CitationBadges ids={section.sourceIds} />
-        </section>
-      ))}
-
-      {answer.limitations.length > 0 && (
-        <aside className="limitations">
-          <h3>Sınırlar ve kontrol notları</h3>
-          <ul>{answer.limitations.map((item, index) => <li key={index}>{item}</li>)}</ul>
-        </aside>
-      )}
-
-      {answer.sources.length > 0 && (
-        <section className="sources">
-          <div className="sources-heading">
-            <h3>Doğrulanmış kararlar</h3>
-            <span>{answer.sources.length} kaynak</span>
-          </div>
-          <div className="source-list">
-            {answer.sources.map((source) => (
-              <SourceCard source={source} key={source.id} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      <p className="legal-note">Bu çıktı kaynak kontrollü bir araştırma taslağıdır; dosya özelinde nihai hukukî değerlendirme yerine geçmez.</p>
-    </article>
-  );
+function applyTheme(t: Theme) {
+  if (typeof document === "undefined") return;
+  document.documentElement.setAttribute("data-theme", t);
+  try {
+    window.localStorage.setItem(STORAGE_THEME, t);
+  } catch {
+    /* yoksay */
+  }
 }
+
+// ---------- Bileşen ----------
 
 export default function Home() {
-  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
-  const [configured, setConfigured] = useState(true);
-  const [model, setModel] = useState("deepseek-v4-pro");
+  // Kimlik doğrulama
+  const [authed, setAuthed] = useState<boolean | null>(null);
   const [password, setPassword] = useState("");
-  const [loginError, setLoginError] = useState("");
-  const [question, setQuestion] = useState("");
-  const [researches, setResearches] = useState<Research[]>([]);
+  const [loginErr, setLoginErr] = useState(false);
+
+  // Sohbet durumu
+  const [messages, setMessages] = useState<Msg[]>([]);
+  const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState("");
-  const [detail, setDetail] = useState("");
-  const [error, setError] = useState("");
+  const [status, setStatus] = useState<Status>(null);
+  const [sources, setSources] = useState<Source[]>([]);
+  const [error, setError] = useState<ErrorInfo | null>(null);
+
+  // UI
+  const [theme, setTheme] = useState<Theme>("light");
+  const [expandedSources, setExpandedSources] = useState<Set<string>>(new Set());
+
+  // Ref'ler
   const endRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+
+  // ---- Efektler ----
 
   useEffect(() => {
-    fetch("/api/login", { cache: "no-store" })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Oturum bilgisi alınamadı");
-        return response.json();
-      })
-      .then((data) => {
-        setAuthenticated(Boolean(data.authenticated));
-        setConfigured(Boolean(data.configured));
-        setModel(data.model || "deepseek-v4-pro");
-      })
-      .catch(() => setAuthenticated(false));
+    fetch("/api/login", { method: "POST", body: "{}" })
+      .then((r) => r.json())
+      .then((d) => setAuthed(d.note ? true : d.ok ? true : false))
+      .catch(() => setAuthed(false));
   }, []);
 
   useEffect(() => {
+    const t = readInitialTheme();
+    setTheme(t);
+    applyTheme(t);
+  }, []);
+
+  // Composer yüksekliğini --composer-h değişkenine yaz → içerik kapatılmaz
+  useEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    const update = () =>
+      document.documentElement.style.setProperty("--composer-h", `${el.offsetHeight}px`);
+    update();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(update) : null;
+    ro?.observe(el);
+    window.addEventListener("resize", update);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, [authed]);
+
+  // Textarea auto-grow
+  useEffect(() => {
+    const ta = taRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = `${Math.min(ta.scrollHeight, COMPOSER_MAX_H)}px`;
+  }, [input]);
+
+  useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [researches, status, error]);
+  }, [messages, status, sources, error]);
+
+  // Esc: error kapat
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && error) setError(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [error]);
+
+  // ---- Handlers ----
+
+  const toggleTheme = useCallback(() => {
+    setTheme((prev) => {
+      const next: Theme = prev === "light" ? "dark" : "light";
+      applyTheme(next);
+      return next;
+    });
+  }, []);
+
+  const toggleSource = useCallback((id: string) => {
+    setExpandedSources((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  /** Citation tıklandığında: hedef kayda kaydır + body'yi aç. */
+  const handleCite = useCallback((n: number) => {
+    const id = `source-K${n}`;
+    const el = document.getElementById(id);
+    if (!el) return;
+    const reduce =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+    setExpandedSources((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  }, []);
+
+  /** Asistan mesaj içeriğini atıf rozetleriyle sarmala. */
+  const renderAnswer = useCallback(
+    (content: string) => renderContent(content, sources.length, handleCite),
+    [sources.length, handleCite],
+  );
 
   async function login() {
-    setLoginError("");
-    const response = await fetch("/api/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (response.ok) {
-      setPassword("");
-      setAuthenticated(true);
-    } else {
-      setLoginError(data.error || "Giriş yapılamadı");
+    setLoginErr(false);
+    try {
+      const r = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      setAuthed(r.ok);
+      if (!r.ok) setLoginErr(true);
+    } catch {
+      setLoginErr(true);
     }
   }
 
-  async function logout() {
-    await fetch("/api/login", { method: "DELETE" });
-    setAuthenticated(false);
-    setResearches([]);
-  }
+  /** Asistan mesajını ya günceller (zaten en son eklenmişse) ya da yeni balon ekler. */
+  const upsertAssistant = useCallback((text: string) => {
+    setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      return last && last.role === "assistant"
+        ? [...prev.slice(0, -1), { role: "assistant", content: text }]
+        : [...prev, { role: "assistant", content: text }];
+    });
+  }, []);
 
-  async function submit() {
-    const current = question.trim();
-    if (current.length < 5 || busy) return;
+  async function gonder() {
+    const q = input.trim();
+    if (!q || busy) return;
+
+    setSources([]);
+    setError(null);
+    setExpandedSources(new Set());
+
+    const yeni: Msg[] = [...messages, { role: "user", content: q }];
+    setMessages(yeni);
+    setInput("");
     setBusy(true);
-    setError("");
-    setStatus("Araştırma hazırlanıyor");
-    setDetail("");
-    setQuestion("");
+    setStatus({ name: "dusunuluyor" });
 
     try {
-      const response = await fetch("/api/chat", {
+      const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: current }),
+        body: JSON.stringify({ messages: yeni }),
       });
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        if (response.status === 401) setAuthenticated(false);
-        throw new Error(data.error || `HTTP ${response.status}`);
+      if (!res.body) throw new Error("Yanıt gövdesi yok");
+      if (!res.ok) {
+        const isRate = res.status === 429;
+        setError({
+          kind: isRate ? "rate_limit" : "general",
+          message: isRate
+            ? "Çok sık istek gönderildi. Lütfen kısa bir süre sonra tekrar deneyin."
+            : `Sunucu hatası (${res.status})`,
+          retryAt: isRate ? Date.now() + 30_000 : undefined,
+        });
+        return;
       }
-      if (!response.body) throw new Error("Yanıt akışı açılamadı");
 
-      const reader = response.body.getReader();
+      const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let buffer = "";
+      let buf = "";
+      let hasAnswer = false;
+
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          const event = JSON.parse(line);
-          if (event.type === "status") {
-            setStatus(event.message || "Araştırılıyor");
-            setDetail(event.detail || "");
-          } else if (event.type === "warning") {
-            setDetail(event.message || "");
-          } else if (event.type === "answer") {
-            setResearches((items) => [...items, { question: current, answer: event.answer }]);
-            setStatus("");
-            setDetail("");
-          } else if (event.type === "error") {
-            throw new Error(event.message || "Araştırma tamamlanamadı");
+        buf += decoder.decode(value, { stream: true });
+        const satirlar = buf.split("\n");
+        buf = satirlar.pop() ?? "";
+        for (const s of satirlar) {
+          if (!s.trim()) continue;
+          let ev: { type: string; [k: string]: unknown };
+          try {
+            ev = JSON.parse(s);
+          } catch {
+            continue;
+          }
+          switch (ev.type) {
+            case "progress": {
+              const p = ev as unknown as { current: number; total: number; label?: string };
+              setStatus({
+                name: "dusunuluyor",
+                progress: { current: p.current, total: p.total, label: p.label },
+              });
+              break;
+            }
+            case "tool":
+              setStatus({
+                name: String(ev.name ?? ""),
+                args: (ev.args as Record<string, unknown>) ?? undefined,
+              });
+              break;
+            case "sources": {
+              const items = (ev.items as Source[]) ?? [];
+              setSources((prev) => [
+                ...prev,
+                ...items.map((it, i) => ({ ...it, id: `K${prev.length + i + 1}` })),
+              ]);
+              break;
+            }
+            case "answer":
+            case "text":
+              hasAnswer = true;
+              setStatus(null);
+              upsertAssistant(String(ev.content ?? ""));
+              break;
+            case "error": {
+              const message = String(ev.message ?? "Bilinmeyen hata");
+              const isRate = (ev.code as string) === "rate_limit";
+              setError(
+                isRate
+                  ? { kind: "rate_limit", message, retryAt: Date.now() + 30_000 }
+                  : { kind: "general", message },
+              );
+              break;
+            }
+            // done, diğer → yoksay
           }
         }
       }
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Bilinmeyen hata");
-      setQuestion(current);
+
+      if (!hasAnswer) setStatus(null);
+    } catch (e) {
+      setError({ kind: "general", message: (e as Error).message });
     } finally {
       setBusy(false);
-      setStatus("");
-      setDetail("");
+      setStatus(null);
     }
   }
 
-  if (authenticated === null) {
-    return <main className="center"><div className="loader" /><p>Güvenli oturum kontrol ediliyor…</p></main>;
-  }
+  // ---- Türetilmiş ----
 
-  if (!authenticated) {
+  const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+  const hasUser = messages.some((m) => m.role === "user");
+  const showEmptyState =
+    !busy &&
+    status === null &&
+    sources.length === 0 &&
+    hasUser &&
+    lastAssistant !== undefined &&
+    lastAssistant.content.trim() === "";
+
+  // ---- Render ----
+
+  if (authed === null)
+    return <main className="center"><span className="muted">Yükleniyor…</span></main>;
+
+  if (!authed) {
     return (
-      <main className="login-shell">
-        <section className="login-panel">
-          <div className="seal">İA</div>
-          <div className="eyebrow">Kişisel hukuk araştırma alanı</div>
-          <h1>İçtihat Asistanı</h1>
-          <p>Yalnızca doğrulanan Bedesten kararlarına bağlı, kaynak kontrollü araştırma.</p>
-          {!configured && <div className="config-warning">Sunucu yapılandırması eksik. APP_PASSWORD ve SESSION_SECRET değerlerini ekleyin.</div>}
-          <label htmlFor="password">Erişim parolası</label>
+      <main className="center">
+        <div className="login" id="main-content">
+          <h1 className="brand">İçtihat<span>·</span></h1>
+          <p className="muted">Devam etmek için erişim parolasını girin.</p>
           <input
-            id="password"
             type="password"
+            className="pw"
             value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            onKeyDown={(event) => event.key === "Enter" && login()}
-            autoComplete="current-password"
+            placeholder="Parola"
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && login()}
             autoFocus
+            aria-label="Parola"
           />
-          {loginError && <p className="form-error" role="alert">{loginError}</p>}
-          <button className="primary" onClick={login} disabled={!password}>Güvenli giriş</button>
-          <div className="login-foot"><span className="dot" /> API anahtarı tarayıcıya gönderilmez</div>
-        </section>
+          {loginErr && (
+            <p className="err" role="alert">
+              Parola hatalı.
+            </p>
+          )}
+          <button className="btn" onClick={login}>
+            Gir
+          </button>
+        </div>
       </main>
     );
   }
 
   return (
-    <main className="app-shell">
+    <main className="app">
       <header className="topbar">
-        <div className="identity">
-          <div className="seal small">İA</div>
-          <div><strong>İçtihat Asistanı</strong><span>Kaynak kontrollü araştırma</span></div>
-        </div>
-        <div className="top-actions">
-          <span className="model-badge">{model}</span>
-          <button className="text-button" onClick={logout}>Çıkış</button>
+        <span className="brand sm">İçtihat<span aria-hidden="true">·</span></span>
+        <div className="topbar-right">
+          <span className="muted tiny hint">Yargıtay · Danıştay · BAM · Yerel</span>
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={toggleTheme}
+            aria-label={theme === "light" ? "Karanlık temaya geç" : "Aydınlık temaya geç"}
+            aria-pressed={theme === "dark"}
+            title={theme === "light" ? "Karanlık tema" : "Aydınlık tema"}
+          >{theme === "light" ? "☾" : "☀"}</button>
         </div>
       </header>
 
-      <div className="content">
-        {researches.length === 0 && (
-          <section className="welcome">
-            <div className="welcome-mark">§</div>
-            <h1>Kararı değil, dayanağını bulun.</h1>
-            <p>Asistan önce Bedesten’de arar, kararın tam metnini açar, esas ve karar numaralarını metin içinde doğrular; yalnızca bundan sonra cevap üretir.</p>
-            <div className="principles">
-              <div><b>01</b><span>Tam metin kontrolü</span></div>
-              <div><b>02</b><span>Sunucu taraflı atıf</span></div>
-              <div><b>03</b><span>Uydurma kaynak reddi</span></div>
+      <div className="thread" id="main-content" tabIndex={-1}>
+        {error && (
+          <div
+            className={`error-card ${error.kind === "rate_limit" ? "is-rate" : ""}`}
+            role="alert"
+          >
+            <div className="error-msg">
+              <strong>
+                {error.kind === "rate_limit" ? "Çok sık istek" : "Bir sorun oluştu"}
+              </strong>
+              <p>{error.message}</p>
+              {error.kind === "rate_limit" && error.retryAt && (
+                <RateCountdown retryAt={error.retryAt} onRetry={gonder} busy={busy} />
+              )}
             </div>
-          </section>
-        )}
-
-        {researches.map((research, index) => (
-          <div className="research" key={index}>
-            <div className="question-card"><span>Soru</span><p>{research.question}</p></div>
-            <AnswerView answer={research.answer} />
+            <div className="error-actions">
+              <button type="button" className="btn" onClick={() => setError(null)}>Kapat</button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => { setError(null); gonder(); }}
+              >Tekrar dene</button>
+            </div>
           </div>
-        ))}
+        )}
 
-        {busy && (
-          <section className="progress" aria-live="polite">
-            <div className="progress-line"><div /></div>
-            <div><strong>{status || "Araştırılıyor"}</strong>{detail && <span>{detail}</span>}</div>
+        {messages.length === 0 && (
+          <div className="empty">
+            <h2 className="welcome">Hoş geldiniz</h2>
+            <p>Bir hukuki soru sorun. Kararlar Bedesten üzerinden aranıp okunur.</p>
+            <p className="muted tiny">
+              Örn: “SGK çıkış kodu 26 ile fesihte işe iade davasında son Yargıtay 9. HD
+              kararları ne yönde?”
+            </p>
+          </div>
+        )}
+
+        {messages.map((m, i) => {
+          if (m.role === "user") {
+            return (
+              <div key={`m-${i}`} className="bubble user">
+                <div className="who">Sen</div>
+                <div className="body">{m.content}</div>
+              </div>
+            );
+          }
+          const isLast = i === messages.length - 1;
+          return (
+            <article key={`m-${i}`} className="answer-card">
+              <header className="answer-head">
+                <span className="who">Asistan</span>
+                {isLast && sources.length > 0 && (
+                  <span className="badge muted tiny">Kaynaklar ({sources.length})</span>
+                )}
+              </header>
+              <div className="body">{renderAnswer(m.content)}</div>
+              {isLast && sources.length > 0 && <SourceStrip sources={sources} onCite={handleCite} />}
+            </article>
+          );
+        })}
+
+        {(status || (busy && sources.length === 0 && !error)) && (
+          <div className="status" aria-live="polite" aria-busy="true">
+            <span className="spinner" aria-hidden />
+            <span className="status-text">
+              {status?.progress
+                ? `${status.progress.label ?? "İlerleniyor"} (${status.progress.current}/${status.progress.total || "?"})`
+                : status?.name && status.name !== "dusunuluyor"
+                ? ARAC_ETIKET[status.name] ?? status.name
+                : "Düşünüyor…"}
+              {status?.args?.ifade ? <em> — “{String(status.args.ifade)}”</em> : null}
+            </span>
+          </div>
+        )}
+
+        {status?.progress && sources.length > 0 && (
+          <ProgressBar progress={status.progress} sourceCount={sources.length} />
+        )}
+
+        {sources.length > 0 && (
+          <section className="sources" aria-label="Kaynak kararlar">
+            {sources.map((src, i) => (
+              <SourceCard
+                key={src.id}
+                index={i + 1}
+                source={src}
+                expanded={expandedSources.has(src.id)}
+                onToggle={() => toggleSource(src.id)}
+              />
+            ))}
           </section>
         )}
-        {error && <div className="request-error" role="alert"><strong>Araştırma tamamlanamadı</strong><span>{error}</span></div>}
+
+        {showEmptyState && (
+          <div className="empty-card" role="status">
+            <strong>Doğrulanabilir karar bulunamadı</strong>
+            <p>Şunları deneyebilirsiniz:</p>
+            <ul className="empty-tips">
+              <li>İfadeyi değiştirin veya daha kısa yazın</li>
+              <li>Daireyi daraltın (örn. yalnız 9. HD)</li>
+              <li>Tarih aralığı ekleyin</li>
+            </ul>
+            <button type="button" className="btn" onClick={() => taRef.current?.focus()}>
+              Yeniden dene
+            </button>
+          </div>
+        )}
+
         <div ref={endRef} />
       </div>
 
-      <div className="composer-wrap">
-        <div className="composer">
-          <textarea
-            value={question}
-            onChange={(event) => setQuestion(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                submit();
-              }
-            }}
-            placeholder="Uyuşmazlığı, aradığınız hukuki ölçütü ve varsa mahkeme/daireyi yazın…"
-            rows={2}
-            maxLength={6000}
-            disabled={busy}
-          />
-          <button className="send" onClick={submit} disabled={busy || question.trim().length < 5} aria-label="Araştırmayı başlat">
-            {busy ? "Bekleyin" : "Araştır"}
-          </button>
-        </div>
-        <p>Her soru bağımsız araştırılır. Daha iyi sonuç için olay türü, hukuki sorun ve tarih aralığını açıkça yazın.</p>
+      <div className="composer" ref={composerRef}>
+        <textarea
+          ref={taRef}
+          value={input}
+          placeholder="Sorunuzu yazın…"
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              gonder();
+            }
+          }}
+          rows={1}
+          aria-label="Mesajınız"
+          disabled={busy}
+        />
+        <button
+          type="button"
+          className="btn send"
+          onClick={gonder}
+          disabled={busy || !input.trim()}
+        >{busy ? "…" : "Gönder"}</button>
       </div>
     </main>
   );
