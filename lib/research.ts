@@ -26,6 +26,7 @@ import {
   relevanceMatches,
   relevantLegislationArticles,
 } from "./legal-search";
+import { semanticRerank } from "./semantic";
 
 export const RESEARCH_SOURCES = ["YARGITAY", "ISTINAF", "DANISTAY", "YEREL", "KYB", "MEVZUAT"] as const;
 export type ResearchSource = (typeof RESEARCH_SOURCES)[number];
@@ -447,18 +448,22 @@ function legislationCandidateScore(summary: LegislationSummary, plan: Legislatio
   return score;
 }
 
-async function verifyCandidate(
+type LoadedDecision = {
+  summary: DecisionSummary;
+  body: string;
+  evidenceText: string;
+  evidenceComplete: boolean;
+  excerpt: string;
+  lexicalMatches: string[];
+  lexicalRequired: number;
+};
+
+async function loadDecisionCandidate(
   summary: DecisionSummary,
   question: string,
-  evidence: Map<string, Evidence>,
-  maxSources: number,
   maxEvidenceChars: number,
   onProgress: (event: ProgressEvent) => void
-): Promise<unknown> {
-  const existing = evidence.get(`decision:${summary.documentId}`);
-  if (existing) return { status: "already_verified", id: existing.id, metadata: sourceLabel(existing) };
-  if (evidence.size >= maxSources) throw new Error(`En fazla ${maxSources} karar okunabilir`);
-
+): Promise<LoadedDecision> {
   onProgress({ type: "status", message: "Karar metni doğrulanıyor", detail: sourceLabel(summary) });
   let document = await readDecisionCache(summary.documentId);
   if (!document) {
@@ -468,35 +473,32 @@ async function verifyCandidate(
   const verification = verifyDecisionDocument(summary, document.text);
   if (!verification.verified) throw new Error(`Karar reddedildi: ${verification.reason}`);
   const relevance = decisionMatchesQuestion(question, document.text);
-  if (relevance.matches.length < relevance.required) {
-    throw new Error(
-      `Karar soru ile yeterince ilgili değil (eşleşen kavramlar: ${relevance.matches.join(", ") || "yok"})`
-    );
-  }
   const selected = evidenceText(document.text, question, maxEvidenceChars);
+  return {
+    summary,
+    body: document.text,
+    evidenceText: selected.text,
+    evidenceComplete: selected.complete,
+    excerpt: focusedExcerpt(document.text, question),
+    lexicalMatches: relevance.matches,
+    lexicalRequired: relevance.required,
+  };
+}
+
+function addDecisionEvidence(loaded: LoadedDecision, evidence: Map<string, Evidence>): void {
+  const summary = loaded.summary;
+  if (evidence.has(`decision:${summary.documentId}`)) return;
   const id = `K${evidence.size + 1}`;
   const item: Evidence = {
     ...summary,
     kind: "decision",
     id,
     sourceUrl: `https://mevzuat.adalet.gov.tr/ictihat/${summary.documentId}`,
-    evidenceComplete: selected.complete,
-    excerpt: focusedExcerpt(document.text, question),
-    body: selected.text,
+    evidenceComplete: loaded.evidenceComplete,
+    excerpt: loaded.excerpt,
+    body: loaded.evidenceText,
   };
   evidence.set(`decision:${summary.documentId}`, item);
-  // Araç sonucuna tam metin koymak, birden çok karar okunduğunda araştırma
-  // döngüsünün bağlamını taşırıyordu. Model bu aşamada yalnızca ilgililik
-  // kararı verir; tam metin sentez adımında sunucu tarafından eklenir.
-  return {
-    id,
-    metadata: sourceLabel(summary),
-    evidenceComplete: selected.complete,
-    verifiedAgainstDocument: true,
-    matchedQuestionTerms: relevance.matches,
-    excerpt: document.text.slice(0, 2400) + (document.text.length > 2400 ? "…" : ""),
-    note: "Tam metin sunucuda doğrulandı ve cevap aşamasında bütünüyle kullanılacak; burada kısa alıntı gösteriliyor.",
-  };
 }
 
 async function verifyLegislationCandidate(
@@ -711,21 +713,23 @@ export async function researchAndAnswer(
   }
 
   const decisionTarget = searchesDecisions ? Math.min(2, maxSources - evidence.size) : 0;
-  let decisionCount = 0;
+  const configuredSemanticCandidates = Number(process.env.SEMANTIC_CANDIDATES ?? "4");
+  const semanticCandidateLimit = Math.min(
+    8,
+    Math.max(decisionTarget, Number.isFinite(configuredSemanticCandidates) ? configuredSemanticCandidates : 4)
+  );
+  const loadedDecisions: LoadedDecision[] = [];
   let decisionAttempts = 0;
   for (const summary of candidates.values()) {
-    if (decisionCount >= decisionTarget || evidence.size >= maxSources || decisionAttempts >= 5) break;
+    if (loadedDecisions.length >= semanticCandidateLimit || decisionTarget <= 0 || decisionAttempts >= semanticCandidateLimit + 2) break;
     decisionAttempts += 1;
     try {
-      await verifyCandidate(
+      loadedDecisions.push(await loadDecisionCandidate(
         summary,
         plan.decisionQuery ?? question,
-        evidence,
-        maxSources,
         maxEvidenceChars,
         onProgress
-      );
-      decisionCount += 1;
+      ));
     } catch (error) {
       if (isBedestenRateLimitError(error)) {
         rateLimitError = error;
@@ -733,6 +737,51 @@ export async function researchAndAnswer(
       }
       // Kimliği doğrulanmayan veya güçlü kavramları taşımayan aday atlanır.
     }
+  }
+
+  if (loadedDecisions.length > 0 && decisionTarget > 0) {
+    let selected: LoadedDecision[] = [];
+    try {
+      onProgress({
+        type: "status",
+        message: "Kararlar anlam bakımından sıralanıyor",
+        detail: `${loadedDecisions.length} doğrulanmış aday karşılaştırılıyor`,
+      });
+      const ranked = await semanticRerank(
+        question,
+        loadedDecisions.map((item) => ({
+          id: item.summary.documentId,
+          title: sourceLabel(item.summary),
+          // Kararların konu özeti başta, gerekçesi ortada ve hükmü sonda
+          // bulunabildiği için yalnızca ilk karakterleri göndermek sıralamayı
+          // yanıltır. Üç bölümü birlikte kullanarak bağlamı dengeleriz.
+          text: [item.body.slice(0, 4500), item.excerpt, item.body.slice(-4500)].join("\n\n---\n\n"),
+        })),
+        signal
+      );
+      const configuredThreshold = Number(process.env.SEMANTIC_MIN_SCORE ?? "0.42");
+      const minimumScore = Number.isFinite(configuredThreshold)
+        ? Math.min(0.9, Math.max(0, configuredThreshold))
+        : 0.42;
+      const byId = new Map(loadedDecisions.map((item) => [item.summary.documentId, item]));
+      selected = ranked.results
+        .filter((result) => result.score >= minimumScore)
+        .map((result) => byId.get(result.id))
+        .filter((item): item is LoadedDecision => Boolean(item))
+        .slice(0, decisionTarget);
+    } catch (error) {
+      onProgress({
+        type: "warning",
+        message: `Anlamsal sıralama kullanılamadı; kelime eşleşmesiyle devam ediliyor: ${error instanceof Error ? error.message : "bilinmeyen hata"}`,
+      });
+    }
+
+    if (selected.length === 0) {
+      selected = loadedDecisions
+        .filter((item) => item.lexicalMatches.length >= item.lexicalRequired)
+        .slice(0, decisionTarget);
+    }
+    selected.forEach((item) => addDecisionEvidence(item, evidence));
   }
 
   const sources = [...evidence.values()];

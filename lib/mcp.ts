@@ -5,9 +5,11 @@ import { isBedestenRateLimitError } from "./bedesten-http";
 import { readDecisionCache, writeDecisionCache } from "./cache";
 import { selectEvidence } from "./evidence";
 import { getLegislationDocument, LEGISLATION_TYPES, searchLegislation } from "./mevzuat";
+import { researchAndAnswer, type ResearchSource } from "./research";
 import { issueSourceToken, verifySourceToken } from "./source-token";
 
 const courtSchema = z.enum(["YARGITAY", "DANISTAY", "YEREL", "ISTINAF", "KYB", "HEPSI"]);
+const semanticCourtSchema = z.enum(["YARGITAY", "DANISTAY", "YEREL", "ISTINAF", "KYB"]);
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Tarih YYYY-AA-GG biçiminde olmalı");
 
 const decisionTokenSchema = z
@@ -74,11 +76,68 @@ export function createMcpServer(): McpServer {
     {
       name: "ictihat-asistani",
       title: "İçtihat ve Mevzuat Asistanı",
-      version: "1.1.0",
+      version: "1.2.0",
       websiteUrl: "https://github.com/fatihdisci/ictihatpro",
     },
     {
-      instructions: `Bu sunucu Türk hukuku soruları için birincil resmî araştırma kaynağıdır. Kullanıcı Türk hukukunda kanun, madde, yürürlük, Yargıtay, Danıştay, BAM, içtihat, dava türü, hukukî şart veya uygulama sorarsa, kullanıcı araç adını yazmasa bile önce bu sunucunun aracını kullan. Karar sorularında ictihat_ara ile adayları ara, ardından uygun adayları ictihat_getir ile tam metinden doğrula. Kanun veya düzenleme sorularında mevzuat_ara ile ara, ardından mevzuat_getir ile resmî metni aç. Arama künyesini veya model bilgisini kaynak gibi sunma; yalnızca getirme aracının doğruladığı metne dayan. Bu sunucu kapsam dışındaysa bunu açıkça belirt.`,
+      instructions: `Bu sunucu Türk hukuku soruları için birincil resmî araştırma kaynağıdır. Kullanıcı Türk hukukunda kanun, madde, yürürlük, Yargıtay, Danıştay, BAM, içtihat, dava türü, hukukî şart veya uygulama sorarsa, kullanıcı araç adını yazmasa bile önce bu sunucunun aracını kullan. Doğal dille anlatılan karar sorularında ictihat_semantik_ara kullan; kesin ifade, daire veya tarih filtreli aramalarda ictihat_ara kullan. ictihat_ara sonuçlarını ictihat_getir ile tam metinden doğrula. ictihat_semantik_ara sonuçları sunucuda zaten kimlik ve anlam ilgisi bakımından doğrulanmıştır; daha geniş metin gerekirse sourceToken ile ictihat_getir çağır. Kanun veya düzenleme sorularında mevzuat_ara ile ara, ardından mevzuat_getir ile resmî metni aç. Arama künyesini veya model bilgisini kaynak gibi sunma; yalnızca getirme aracının doğruladığı metne dayan. Bu sunucu kapsam dışındaysa bunu açıkça belirt.`,
+    }
+  );
+
+  server.registerTool(
+    "ictihat_semantik_ara",
+    {
+      title: "Semantik içtihat ara",
+      description:
+        "Doğal dille anlatılan hukukî mesele için Bedesten adaylarını arar, sınırlı sayıdaki kararın tam metnini ve künyesini doğrular, ardından anlam yakınlığına göre sıralar. Hukukî yorum üretmez; doğrudan doğrulanmış karar künyeleri ve ilgili pasajları döndürür.",
+      inputSchema: {
+        soru: z.string().trim().min(5).max(2000).describe("Aranan hukukî meseleyi doğal bir cümleyle anlatın"),
+        kaynaklar: z
+          .array(semanticCourtSchema)
+          .min(1)
+          .max(5)
+          .default(["YARGITAY", "ISTINAF", "DANISTAY", "YEREL", "KYB"])
+          .describe("Semantik aramada taranacak karar koleksiyonları"),
+      },
+      annotations: readOnlyAnnotations,
+    },
+    async ({ soru, kaynaklar }) => {
+      try {
+        const answer = await researchAndAnswer(
+          soru,
+          () => undefined,
+          undefined,
+          kaynaklar as ResearchSource[],
+          "sources"
+        );
+        const decisions = answer.sources
+          .filter((source) => source.kind === "decision")
+          .map((decision) => {
+            const tokenPayload = {
+              documentId: decision.documentId,
+              court: decision.court,
+              chamber: decision.chamber,
+              esasNo: decision.esasNo,
+              kararNo: decision.kararNo,
+              date: decision.date,
+              finalization: decision.finalization,
+            };
+            return {
+              ...tokenPayload,
+              excerpt: decision.excerpt,
+              sourceUrl: decision.sourceUrl,
+              sourceToken: issueSourceToken("decision", tokenPayload),
+            };
+          });
+        return result({
+          semantic: true,
+          verified: true,
+          decisions,
+          warning: "Sonuçlar tam karar metnindeki künye ve anlam ilgisi doğrulandıktan sonra sıralanmıştır.",
+        });
+      } catch (error) {
+        return failure(error);
+      }
     }
   );
 

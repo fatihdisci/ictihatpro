@@ -14,6 +14,13 @@ Bu uygulama LLM'in karar künyesi üretmesine izin vermez:
 6. Kaynak kartlarındaki daire, esas, karar ve tarih bilgilerini model değil sunucu yazar.
 7. Model doğrulanmamış bir kaynak kimliği veya karar numarası yazarsa cevap reddedilir.
 
+Karar aramalarında ilk Bedesten sonuçlarının sınırlı bir bölümü tam metinden
+doğrulanır ve kullanıcının cümlesine anlamsal yakınlığına göre yeniden
+sıralanır. `OPENROUTER_API_KEY` tanımlıysa `google/gemini-embedding-001`
+embedding modeli kullanılır; tanımlı değilse mevcut DeepSeek bağlantısı yalnızca
+aday puanlayıcı olarak çalışır. Semantik katman hukukî cevap üretmez ve karar
+künyesine müdahale etmez.
+
 Bu önlemler karar künyesi uydurma riskini teknik olarak ciddi ölçüde azaltır. Hiçbir LLM hukukî yorum bakımından matematiksel doğruluk garantisi veremez; bu nedenle çıktı araştırma taslağı olarak sunulur.
 
 ## Hızlı başlangıç
@@ -72,6 +79,15 @@ Zorunlu değerler:
 - `APP_PASSWORD`
 - `SESSION_SECRET`
 
+İsteğe bağlı gerçek embedding sıralaması:
+
+- `OPENROUTER_API_KEY`
+- `OPENROUTER_EMBEDDING_MODEL=google/gemini-embedding-001`
+
+OpenRouter tanımlanmazsa semantik yeniden sıralama `DEEPSEEK_API_KEY` ile
+çalışmaya devam eder. `SEMANTIC_CANDIDATES` varsayılan olarak `4`,
+`SEMANTIC_MIN_SCORE` ise `0.42` değerindedir.
+
 Kendi alan adınız varsa ayrıca:
 
 - `TRUSTED_ORIGIN=https://ictihat.sizinalanadiniz.com`
@@ -89,7 +105,7 @@ Bedesten arama davranışına ilişkin canlıda doğrulanmış notlar:
 
 ## ChatGPT MCP
 
-Vercel kurulumu ayrıca `/api/mcp` adresinde dört salt-okunur araç sunar: doğrulanmış içtihat arama/getirme ve resmî mevzuat arama/getirme. ChatGPT/Codex masaüstü uygulamasıyla bağlantı, güvenlik modeli ve mahkeme kapsamının dürüst sınırları için [MCP.md](./MCP.md) dosyasına bakın.
+Vercel kurulumu ayrıca `/api/mcp` adresinde beş salt-okunur araç sunar: normal ve semantik içtihat arama, doğrulanmış içtihat getirme ve resmî mevzuat arama/getirme. ChatGPT/Codex masaüstü uygulamasıyla bağlantı, güvenlik modeli ve mahkeme kapsamının dürüst sınırları için [MCP.md](./MCP.md) dosyasına bakın.
 
 Bedesten ve mevzuat istemci tasarımında incelenen MIT lisanslı açık kaynak projeler ve korunan lisans metni için [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) dosyasına bakın. Uygulama bu depolara çalışma zamanı bağımlılığı taşımaz.
 
@@ -97,6 +113,9 @@ Bedesten ve mevzuat istemci tasarımında incelenen MIT lisanslı açık kaynak 
 
 - `DEEPSEEK_API_KEY` hiçbir istemci paketine eklenmez ve tarayıcıya gönderilmez.
 - Anahtar yalnızca sunucudaki `/api/chat` işlemi DeepSeek'e istek gönderirken kullanılır.
+- Semantik sıralamada en fazla `SEMANTIC_CANDIDATES` adet doğrulanmış karar
+  pasajı yapılandırılmış sıralama sağlayıcısına gönderilir. OpenRouter
+  kullanılacaksa `OPENROUTER_API_KEY` de yalnızca sunucuda tutulur.
 - `.env.local` Git tarafından dışlanır.
 - Uygulamada üçüncü taraf analiz veya izleme kodu yoktur.
 - Vercel kullanırsanız secret değerleri Vercel altyapısında tutulur. Tamamen kendi cihazınızda tutmak istiyorsanız self-host seçeneğini kullanın.

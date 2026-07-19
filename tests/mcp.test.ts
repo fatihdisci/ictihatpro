@@ -15,7 +15,7 @@ describe("MCP sunucusu", () => {
     else process.env.SESSION_SECRET = originalSecret;
   });
 
-  it("dört salt-okunur hukuk aracını protokol üzerinden listeler", async () => {
+  it("semantik arama dahil beş salt-okunur hukuk aracını protokol üzerinden listeler", async () => {
     const server = createMcpServer();
     const client = new Client({ name: "ictihat-test-client", version: "1.0.0" });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -24,6 +24,7 @@ describe("MCP sunucusu", () => {
     const listed = await client.listTools();
 
     expect(listed.tools.map((tool) => tool.name)).toEqual([
+      "ictihat_semantik_ara",
       "ictihat_ara",
       "ictihat_getir",
       "mevzuat_ara",

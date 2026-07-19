@@ -10,6 +10,7 @@ import {
   writeLegislationCache,
 } from "../lib/cache";
 import { getLegislationDocument, searchLegislation } from "../lib/mevzuat";
+import { semanticRerank } from "../lib/semantic";
 
 vi.mock("../lib/deepseek", () => ({ complete: vi.fn() }));
 vi.mock("../lib/bedesten", () => ({
@@ -31,6 +32,7 @@ vi.mock("../lib/mevzuat", () => ({
   searchLegislation: vi.fn(),
   getLegislationDocument: vi.fn(),
 }));
+vi.mock("../lib/semantic", () => ({ semanticRerank: vi.fn() }));
 
 function decisionSummary(documentId: string, overrides: Record<string, unknown> = {}) {
   return {
@@ -94,6 +96,7 @@ beforeEach(() => {
   vi.mocked(writeDecisionCache).mockReset();
   vi.mocked(readLegislationCache).mockReset();
   vi.mocked(writeLegislationCache).mockReset();
+  vi.mocked(semanticRerank).mockReset();
 
   vi.mocked(searchDecisions).mockResolvedValue({ total: 0, decisions: [] });
   vi.mocked(searchLegislation).mockResolvedValue({ total: 0, documents: [] });
@@ -102,6 +105,10 @@ beforeEach(() => {
   vi.mocked(writeDecisionCache).mockResolvedValue(undefined);
   vi.mocked(writeLegislationCache).mockResolvedValue(undefined);
   vi.mocked(verifyDecisionDocument).mockReturnValue({ verified: true });
+  vi.mocked(semanticRerank).mockImplementation(async (_query, documents) => ({
+    provider: "deepseek-rerank",
+    results: documents.map((document, index) => ({ id: document.id, score: 0.9 - index * 0.05 })),
+  }));
 });
 
 describe("hukukî sorgu ve madde seçimi", () => {
@@ -219,7 +226,32 @@ describe("tek turlu araştırma akışı", () => {
     }));
     expect(answer.sources).toHaveLength(2);
     expect(answer.sources.every((source) => source.kind === "decision")).toBe(true);
+    expect(semanticRerank).toHaveBeenCalledTimes(1);
     expect(complete).not.toHaveBeenCalled();
+  });
+
+  it("doğrulanmış karar adaylarını semantik puana göre sıralar", async () => {
+    const first = decisionSummary("1111");
+    const second = decisionSummary("2222", { esasNo: "2022/12", kararNo: "2023/44" });
+    vi.mocked(searchDecisions).mockResolvedValue({ total: 2, decisions: [first, second] });
+    vi.mocked(getDecisionDocument)
+      .mockResolvedValueOnce({ mimeType: "text/html", text: "Kira bedeli ve tahliye. ".repeat(30) })
+      .mockResolvedValueOnce({ mimeType: "text/html", text: "Geçersiz fesih ve işe iade. ".repeat(30) });
+    vi.mocked(semanticRerank).mockResolvedValue({
+      provider: "deepseek-rerank",
+      results: [{ id: "2222", score: 0.96 }, { id: "1111", score: 0.2 }],
+    });
+
+    const answer = await researchAndAnswer(
+      "İş sözleşmesinin geçersiz feshi sonrası işe iade",
+      vi.fn(),
+      undefined,
+      ["YARGITAY"],
+      "sources"
+    );
+
+    expect(answer.sources).toHaveLength(1);
+    expect(answer.sources[0]).toMatchObject({ kind: "decision", documentId: "2222" });
   });
 
   it("analiz modunda kaynak topladıktan sonra yalnızca bir sentez çağrısı yapar", async () => {
