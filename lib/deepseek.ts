@@ -41,11 +41,15 @@ export async function complete(options: CompletionOptions): Promise<DeepSeekMess
 
   const baseUrl = (process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com").replace(/\/$/, "");
   const model = process.env.DEEPSEEK_MODEL ?? "deepseek-v4-pro";
+  // DeepSeek rejects a forced function selection while thinking is enabled.
+  // The first research turn deliberately forces the Bedesten search; subsequent
+  // turns return to automatic tool selection with thinking enabled.
+  const forcedTool = typeof options.toolChoice === "object";
   const body: Record<string, unknown> = {
     model,
     messages: options.messages,
     max_tokens: options.maxTokens ?? 5000,
-    thinking: { type: "enabled" },
+    thinking: { type: forcedTool ? "disabled" : "enabled" },
     reasoning_effort: "medium",
   };
   if (options.tools) {
