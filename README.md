@@ -82,7 +82,7 @@ Uygulama varsayılan olarak en fazla 6 araştırma turunda 3 doğrulanmış kara
 
 ## ChatGPT MCP
 
-Vercel kurulumu ayrıca `/api/mcp` adresinde dört salt-okunur araç sunar: doğrulanmış içtihat arama/getirme ve resmî mevzuat arama/getirme. ChatGPT Pro Developer Mode kurulumu, güvenlik modeli ve mahkeme kapsamının dürüst sınırları için [MCP.md](./MCP.md) dosyasına bakın.
+Vercel kurulumu ayrıca `/api/mcp` adresinde dört salt-okunur araç sunar: doğrulanmış içtihat arama/getirme ve resmî mevzuat arama/getirme. ChatGPT/Codex masaüstü uygulamasıyla bağlantı, güvenlik modeli ve mahkeme kapsamının dürüst sınırları için [MCP.md](./MCP.md) dosyasına bakın.
 
 Bedesten ve mevzuat istemci tasarımında incelenen MIT lisanslı açık kaynak projeler ve korunan lisans metni için [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) dosyasına bakın. Uygulama bu depolara çalışma zamanı bağımlılığı taşımaz.
 

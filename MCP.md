@@ -28,13 +28,12 @@ Bedesten karar endpoint'inin mevcut koleksiyonları `YARGITAYKARARI`, `DANISTAYK
 
 ## ChatGPT'de bağlama
 
-Güncel OpenAI desteğinde Pro kullanıcıları Developer Mode üzerinden salt-okunur MCP sunucuları bağlayabilir. Kurulum ChatGPT web arayüzünden yapılır:
+ChatGPT/Codex masaüstü uygulamasında `Settings → MCP servers → Add server` yolundan Streamable HTTP sunucusu eklenebilir. Bu proje için alanlar şöyledir:
 
-1. `Settings → Apps → Advanced settings → Developer mode` seçeneğini açın.
-2. `Settings → Apps → Create` bölümüne girin.
-3. MCP URL'si olarak `https://VERCEL-ALAN-ADINIZ/api/mcp` yazın.
-4. İlk sürüm için kimlik doğrulamasız bağlantıyı seçin.
-5. `Scan tools` ile dört aracı taratıp uygulamayı oluşturun.
-6. Yeni bir sohbette uygulamayı araç menüsünden seçin.
+1. **Ad:** `İçtihat ve Mevzuat Asistanı`
+2. **Tür:** `Akış destekli HTTP`
+3. **URL:** `https://VERCEL-ALAN-ADINIZ/api/mcp`
+4. Taşıyıcı token, başlıklar ve ortam değişkenlerini ilk sürümde boş bırakın.
+5. Kaydettikten sonra uygulamayı yeniden başlatın ve yeni bir görevde `/mcp` ile bağlantıyı doğrulayın.
 
-Plus planında özel MCP bağlantısı resmî olarak belirtilmemektedir. Sunucu Plus kullanırken geliştirilebilir ve bağımsız MCP istemcisiyle test edilebilir; ChatGPT içindeki bağlantı için Pro gerekir.
+Sunucu, doğal dildeki Türk hukuku sorularında araçlar adını anılmadan önce kullanılacak şekilde yönergeler yayımlar. Örneğin “Muvazaalı işlemde ispat yükü nasıl değerlendirilir?” doğrudan yazılabilir. Araç seçimi istemci modelinin kararı olduğundan yüzde yüz zorlayıcı bir anahtar yoktur; MCP bağlantısı etkin ve araçlar açık olmalıdır. Normal ChatGPT web/mobil sohbetleri ile masaüstü Codex MCP bağlantısı farklı ürün yüzeyleridir; birinde yapılan bağlantı diğerine kendiliğinden taşınmaz.
