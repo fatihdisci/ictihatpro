@@ -41,15 +41,16 @@ export async function complete(options: CompletionOptions): Promise<DeepSeekMess
 
   const baseUrl = (process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com").replace(/\/$/, "");
   const model = process.env.DEEPSEEK_MODEL ?? "deepseek-v4-pro";
-  // DeepSeek rejects a forced function selection while thinking is enabled.
-  // The first research turn deliberately forces the Bedesten search; subsequent
-  // turns return to automatic tool selection with thinking enabled.
-  const forcedTool = options.toolChoice != null && options.toolChoice !== "auto";
+  // DeepSeek tool-call conversations cannot switch thinking mode between turns:
+  // it then demands a reasoning_content value that a non-thinking tool turn
+  // never produced. Keep the whole tool loop non-thinking. The final synthesis
+  // is a separate request and still uses thinking.
+  const toolConversation = Boolean(options.tools?.length);
   const body: Record<string, unknown> = {
     model,
     messages: options.messages,
     max_tokens: options.maxTokens ?? 5000,
-    thinking: { type: forcedTool ? "disabled" : "enabled" },
+    thinking: { type: toolConversation ? "disabled" : "enabled" },
     reasoning_effort: "medium",
   };
   if (options.tools) {

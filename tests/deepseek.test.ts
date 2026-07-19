@@ -53,6 +53,6 @@ describe("DeepSeek araç çağrısı", () => {
 
     const sent = JSON.parse(String(fetchMock.mock.calls[0][1].body));
     expect(sent.tool_choice).toBeUndefined();
-    expect(sent.thinking).toEqual({ type: "enabled" });
+    expect(sent.thinking).toEqual({ type: "disabled" });
   });
 });
