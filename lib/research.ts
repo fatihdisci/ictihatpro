@@ -153,6 +153,18 @@ export function decisionMatchesQuestion(question: string, body: string): { match
   return { matches, required: Math.min(2, terms.length) };
 }
 
+/** Converts a natural-language query to the Boolean syntax Bedesten expects. */
+export function bedestenBooleanQuery(value: string): string {
+  const phrase = value.trim();
+  if (/\b(?:AND|OR|NOT)\b|["*()]/i.test(phrase)) return phrase;
+
+  const terms = searchableTerms(phrase);
+  const hasTurkishLira = /türk\s+liras/iu.test(phrase);
+  const selected = terms.filter((term) => !(hasTurkishLira && term.startsWith("lira"))).slice(0, 3);
+  if (hasTurkishLira) selected.push('"türk lirası"');
+  return selected.map((term) => (term.startsWith('"') ? term : `${searchStem(term)}*`)).join(" AND ") || phrase;
+}
+
 function evidenceText(body: string, question: string, maxChars = 240_000): {
   text: string;
   complete: boolean;
@@ -305,10 +317,11 @@ export async function researchAndAnswer(
       try {
         if (call.function.name === "karar_ara") {
           const phrase = String(args.ifade ?? "").trim();
-          onProgress({ type: "status", message: "Kararlarda aranıyor", detail: phrase });
+          const searchPhrase = bedestenBooleanQuery(phrase);
+          onProgress({ type: "status", message: "Kararlarda aranıyor", detail: searchPhrase });
           const court = String(args.mahkeme ?? "HEPSI") as keyof typeof COURT_TYPES;
           const found = await searchDecisions({
-            phrase,
+            phrase: searchPhrase,
             court: court in COURT_TYPES ? court : "HEPSI",
             chamber: typeof args.daire === "string" ? args.daire : undefined,
             startDate: typeof args.baslangic_tarihi === "string" ? args.baslangic_tarihi : undefined,

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { decisionMatchesQuestion, researchAndAnswer } from "../lib/research";
+import { bedestenBooleanQuery, decisionMatchesQuestion, researchAndAnswer } from "../lib/research";
 import { complete } from "../lib/deepseek";
 import { getDecisionDocument, searchDecisions, verifyDecisionDocument } from "../lib/bedesten";
 import { readDecisionCache, writeDecisionCache } from "../lib/cache";
@@ -26,6 +26,13 @@ describe("araştırma sentezi", () => {
 
     expect(unrelated.matches.length).toBeLessThan(unrelated.required);
     expect(related.matches.length).toBeGreaterThanOrEqual(related.required);
+  });
+
+  it("doğal sorguyu Bedesten Boolean aramasına dönüştürür", () => {
+    expect(bedestenBooleanQuery("eski türk lirası ipoteklerinin kaldırılması")).toBe(
+      'ipotek* AND kaldır* AND "türk lirası"'
+    );
+    expect(bedestenBooleanQuery('ipotek AND "türk lirası"')).toBe('ipotek AND "türk lirası"');
   });
 
   it("model boş atıf dizileri döndürdüğünde yalnızca doğrulanmış kaynağı ilişkilendirir", async () => {
