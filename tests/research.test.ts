@@ -82,18 +82,22 @@ describe("araştırma sentezi", () => {
       .mockResolvedValueOnce(toolCallMessage("karar_oku", { document_id: "987654" }))
       .mockResolvedValueOnce({ role: "assistant", content: "Araştırma tamamlandı." })
       .mockResolvedValueOnce(
-        synthesisMessage({
+        toolCallMessage("dogrulanmis_cevap_yaz", {
           title: "Sonuç",
           summary: "Karar değerlendirmesi.",
           summarySourceIds: ["K1"],
           sections: [],
           limitations: [],
-        })
+        }, "synthesis")
       );
 
     const answer = await researchAndAnswer("Kıdem tazminatı bakımından şartlar nelerdir?", vi.fn());
 
     expect(answer.sources[0].sourceUrl).toBe("https://mevzuat.adalet.gov.tr/ictihat/987654");
+    expect(vi.mocked(complete).mock.calls[3][0].toolChoice).toEqual({
+      type: "function",
+      function: { name: "dogrulanmis_cevap_yaz" },
+    });
   });
 
   it("model istedikçe kaynak kotasına kadar birden çok kararı doğrular", async () => {

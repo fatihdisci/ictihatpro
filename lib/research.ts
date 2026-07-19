@@ -87,6 +87,40 @@ const RESEARCH_TOOLS: DeepSeekTool[] = [
   },
 ];
 
+const SYNTHESIS_TOOL: DeepSeekTool = {
+  type: "function",
+  function: {
+    name: "dogrulanmis_cevap_yaz",
+    description:
+      "Yalnızca sunucunun verdiği doğrulanmış kaynaklardan kısa, kaynak kimlikleriyle bağlı Türkçe hukuk araştırması oluşturur.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        title: { type: "string", maxLength: 140 },
+        summary: { type: "string", maxLength: 4000 },
+        summarySourceIds: { type: "array", items: { type: "string" }, maxItems: 6 },
+        sections: {
+          type: "array",
+          maxItems: 3,
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              heading: { type: "string", maxLength: 160 },
+              text: { type: "string", maxLength: 7000 },
+              sourceIds: { type: "array", items: { type: "string" }, maxItems: 6 },
+            },
+            required: ["heading", "text", "sourceIds"],
+          },
+        },
+        limitations: { type: "array", items: { type: "string", maxLength: 600 }, maxItems: 8 },
+      },
+      required: ["title", "summary", "summarySourceIds", "sections", "limitations"],
+    },
+  },
+};
+
 const toolArgsSchema = z.record(z.unknown());
 const synthesisSchema = z.object({
   title: z.string().min(1).max(140),
@@ -441,7 +475,7 @@ export async function researchAndAnswer(
   onProgress({ type: "status", message: "Doğrulanmış kaynaklardan cevap hazırlanıyor" });
   // Kaynak sayısı arttıkça sentez istemi model bağlamını aşabilir; toplam
   // bütçe kaynaklara bölüştürülür ve uzun kararlar soruya odaklı kırpılır.
-  const synthesisBudget = 240_000;
+  const synthesisBudget = 90_000;
   const perSourceBudget = Math.max(20_000, Math.floor(synthesisBudget / sources.length));
   const sourceBlock = sources
     .map((source) => {
@@ -468,7 +502,7 @@ KESİN KURALLAR:
 5. complete=false olan kaynaklarda yalnızca gösterilen pasajlara dayan ve sınırlılığı belirt.
 6. Bu bir araştırma taslağıdır; kesin hukukî mütalaa gibi sunma.
 7. Toplam yanıtı kısa tut: özet en fazla 800, her bölüm en fazla 1.200 karakter; en fazla üç bölüm kullan.
-8. Yalnızca JSON üret. Şema:
+8. Cevabı dogrulanmis_cevap_yaz aracına ver. Şema:
 {"title":"...","summary":"...","summarySourceIds":["K1"],"sections":[{"heading":"...","text":"...","sourceIds":["K1"]}],"limitations":["..."]}
 
 KULLANICI SORUSU:
@@ -487,15 +521,28 @@ ${sourceBlock}`;
           : `Önceki özet çıktısı geçerli JSON değildi. Kaynak değerlendirmesi ekleme veya değiştirme. Aşağıdaki şemaya UYAN, kısa ve geçerli bir JSON nesnesi üret; satır sonlarını JSON string içinde \\n olarak kaçır.\n\nŞEMA:\n{"title":"...","summary":"...","summarySourceIds":["K1"],"sections":[{"heading":"...","text":"...","sourceIds":["K1"]}],"limitations":["..."]}\n\nYalnızca şu kaynak kimlikleri kullanılabilir: ${sources.map((source) => source.id).join(", ")}\n\nKULLANICI SORUSU:\n${question}\n\nDOĞRULANMIŞ KAYNAKLAR:\n${sourceBlock}`;
       const response = await complete({
         messages: [
-          { role: "system", content: "Sen kaynak-sınırlı bir hukuk araştırma yazıcısısın. JSON dışında çıktı verme." },
+          {
+            role: "system",
+            content:
+              attempt === 0
+                ? "Sen kaynak-sınırlı bir hukuk araştırma yazıcısısın. Sonucu yalnızca dogrulanmis_cevap_yaz aracına ver."
+                : "Sen kaynak-sınırlı bir hukuk araştırma yazıcısısın. JSON dışında çıktı verme.",
+          },
           { role: "user", content: repairInstruction },
         ],
-        json: true,
-        maxTokens: 2200,
+        tools: attempt === 0 ? [SYNTHESIS_TOOL] : undefined,
+        toolChoice:
+          attempt === 0 ? { type: "function", function: { name: "dogrulanmis_cevap_yaz" } } : undefined,
+        json: attempt !== 0,
+        maxTokens: 2800,
         signal,
       });
-      hadModelOutput = Boolean(response.content?.trim());
-      const parsed = synthesisSchema.parse(JSON.parse(response.content ?? ""));
+      const structured =
+        response.tool_calls?.find((call) => call.function.name === "dogrulanmis_cevap_yaz")?.function.arguments ??
+        response.content ??
+        "";
+      hadModelOutput = Boolean(structured.trim());
+      const parsed = synthesisSchema.parse(JSON.parse(structured));
       const completed = completeMissingSourceIds(parsed, sources);
       const validated = validateReferences(completed, sources);
       return {
