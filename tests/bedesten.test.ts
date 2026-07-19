@@ -84,4 +84,23 @@ describe("Bedesten arama isteği", () => {
     const payload = JSON.parse(fetchMock.mock.calls[0][1].body as string);
     expect(payload.data.itemTypeList).toEqual(["YARGITAYKARARI", "ISTINAFHUKUK"]);
   });
+
+  it("seçilen Danıştay, yerel hukuk ve kanun yararına bozma koleksiyonlarını aynen yollar", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: async () => ({ metadata: { FMTY: "SUCCESS" }, data: { total: 0, emsalKararList: [] } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await searchDecisions({
+      phrase: "muvazaa",
+      court: "YARGITAY",
+      courtTypes: ["DANISTAYKARAR", "YERELHUKUK", "KYB"],
+    });
+
+    const payload = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(payload.data.itemTypeList).toEqual(["DANISTAYKARAR", "YERELHUKUK", "KYB"]);
+  });
 });

@@ -5,13 +5,14 @@ import {
   searchDecisions,
   verifyDecisionDocument,
   type DecisionCourt,
+  type DecisionCollection,
   type DecisionSummary,
 } from "./bedesten";
 import { readDecisionCache, writeDecisionCache } from "./cache";
 import { complete, type DeepSeekMessage, type DeepSeekTool } from "./deepseek";
 import { getLegislationDocument, searchLegislation, type LegislationSummary } from "./mevzuat";
 
-export const RESEARCH_SOURCES = ["YARGITAY", "ISTINAF", "MEVZUAT"] as const;
+export const RESEARCH_SOURCES = ["YARGITAY", "ISTINAF", "DANISTAY", "YEREL", "KYB", "MEVZUAT"] as const;
 export type ResearchSource = (typeof RESEARCH_SOURCES)[number];
 export const DEFAULT_RESEARCH_SOURCES: ResearchSource[] = ["YARGITAY"];
 
@@ -47,7 +48,7 @@ export type ProgressEvent =
 
 function buildResearchPrompt(maxSources: number, selectedSources: ResearchSource[]): string {
   const selected = selectedSources
-    .map((source) => ({ YARGITAY: "Yargıtay", ISTINAF: "BAM hukuk", MEVZUAT: "mevzuat" })[source])
+    .map((source) => ({ YARGITAY: "Yargıtay", ISTINAF: "BAM hukuk", DANISTAY: "Danıştay", YEREL: "yerel hukuk", KYB: "kanun yararına bozma", MEVZUAT: "mevzuat" })[source])
     .join(", ");
   return `Sen Türk hukuku için kaynak toplayan ihtiyatlı bir araştırma ajanısın.
 Görevin cevap yazmak değil; kullanıcının sorusuyla doğrudan ilgili kararları bulup tam metinlerini doğrulatmaktır.
@@ -455,14 +456,19 @@ export async function researchAndAnswer(
 ): Promise<VerifiedAnswer> {
   const selected = RESEARCH_SOURCES.filter((source) => selectedSources.includes(source));
   if (selected.length === 0) throw new Error("En az bir araştırma kaynağı seçilmelidir");
-  const searchesDecisions = selected.includes("YARGITAY") || selected.includes("ISTINAF");
+  const decisionCollections: Partial<Record<ResearchSource, DecisionCollection>> = {
+    YARGITAY: "YARGITAYKARARI",
+    ISTINAF: "ISTINAFHUKUK",
+    DANISTAY: "DANISTAYKARAR",
+    YEREL: "YERELHUKUK",
+    KYB: "KYB",
+  };
+  const selectedDecisionCollections = selected
+    .map((source) => decisionCollections[source])
+    .filter((collection): collection is DecisionCollection => Boolean(collection));
+  const searchesDecisions = selectedDecisionCollections.length > 0;
   const searchesLegislation = selected.includes("MEVZUAT");
-  const decisionCourt: DecisionCourt =
-    selected.includes("YARGITAY") && selected.includes("ISTINAF")
-      ? "YARGITAY_ISTINAF"
-      : selected.includes("ISTINAF")
-        ? "ISTINAF"
-        : "YARGITAY";
+  const decisionCourt: DecisionCourt = "YARGITAY";
   const candidates = new Map<string, DecisionSummary>();
   const legislationCandidates = new Map<string, LegislationSummary>();
   const evidence = new Map<string, Evidence>();
@@ -511,6 +517,7 @@ export async function researchAndAnswer(
           const found = await searchDecisions({
             phrase: searchPhrase,
             court: decisionCourt,
+            courtTypes: selectedDecisionCollections,
             chamber: typeof args.daire === "string" ? args.daire : undefined,
             startDate: typeof args.baslangic_tarihi === "string" ? args.baslangic_tarihi : undefined,
             endDate: typeof args.bitis_tarihi === "string" ? args.bitis_tarihi : undefined,

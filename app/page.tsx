@@ -32,11 +32,14 @@ type LegislationSource = {
 };
 
 type Source = DecisionSource | LegislationSource;
-type ResearchSource = "YARGITAY" | "ISTINAF" | "MEVZUAT";
+type ResearchSource = "YARGITAY" | "ISTINAF" | "DANISTAY" | "YEREL" | "KYB" | "MEVZUAT";
 
 const SOURCE_OPTIONS: Array<{ id: ResearchSource; label: string; shortLabel: string }> = [
   { id: "YARGITAY", label: "Yargıtay kararları", shortLabel: "Yargıtay" },
   { id: "ISTINAF", label: "BAM hukuk kararları", shortLabel: "İstinaf" },
+  { id: "DANISTAY", label: "Danıştay kararları", shortLabel: "Danıştay" },
+  { id: "YEREL", label: "Yerel hukuk mahkemesi kararları", shortLabel: "Yerel" },
+  { id: "KYB", label: "Kanun yararına bozma kararları", shortLabel: "KYB" },
   { id: "MEVZUAT", label: "Resmî mevzuat", shortLabel: "Mevzuat" },
 ];
 
@@ -237,7 +240,7 @@ export default function Home() {
   const [progressCount, setProgressCount] = useState(0);
   const [error, setError] = useState<{ message: string; isRateLimit: boolean } | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
-  const [selectedSources, setSelectedSources] = useState<ResearchSource[]>(["YARGITAY", "ISTINAF", "MEVZUAT"]);
+  const [selectedSources, setSelectedSources] = useState<ResearchSource[]>(["YARGITAY", "ISTINAF", "DANISTAY", "YEREL", "KYB", "MEVZUAT"]);
   const endRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   const lastQuestionRef = useRef("");

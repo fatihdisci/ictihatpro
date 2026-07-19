@@ -17,6 +17,7 @@ export const COURT_TYPES = {
 } as const;
 
 export type DecisionCourt = keyof typeof COURT_TYPES | "YARGITAY_ISTINAF";
+export type DecisionCollection = (typeof COURT_TYPES)[keyof typeof COURT_TYPES][number];
 
 const HEADERS = {
   Accept: "application/json",
@@ -120,6 +121,7 @@ export type DecisionSummary = {
 export async function searchDecisions(params: {
   phrase: string;
   court: DecisionCourt;
+  courtTypes?: readonly DecisionCollection[];
   chamber?: string;
   startDate?: string;
   endDate?: string;
@@ -138,9 +140,11 @@ export async function searchDecisions(params: {
     pageSize: 10,
     pageNumber: Math.min(20, Math.max(1, params.page ?? 1)),
     itemTypeList:
-      params.court === "YARGITAY_ISTINAF"
-        ? [...COURT_TYPES.YARGITAY, ...COURT_TYPES.ISTINAF]
-        : COURT_TYPES[params.court] ?? COURT_TYPES.YARGITAY,
+      params.courtTypes?.length
+        ? [...params.courtTypes]
+        : params.court === "YARGITAY_ISTINAF"
+          ? [...COURT_TYPES.YARGITAY, ...COURT_TYPES.ISTINAF]
+          : COURT_TYPES[params.court] ?? COURT_TYPES.YARGITAY,
     phrase,
   };
   const chamber = resolveChamber(params.chamber);

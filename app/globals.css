@@ -342,7 +342,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visib
 .composer-field { flex: 1; min-width: 0; }
 .composer-label-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .composer-field label { display: block; padding-top: 1px; color: var(--gold); font-size: 9px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
-.source-picker { display: flex; gap: 4px; }
+.source-picker { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
 .source-picker button { padding: 4px 7px; color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: 2px; cursor: pointer; font-size: 10px; font-weight: 700; }
 .source-picker button:hover:not(:disabled) { color: var(--forest); border-color: var(--line); }
 .source-picker button.is-selected { color: var(--forest); background: var(--gold-soft); border-color: rgba(170, 123, 54, .24); }
@@ -395,7 +395,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visib
   .summary { padding: 18px; font-size: 16px; }
   .composer { gap: 7px; padding-left: 12px; }
   .composer-label-row { align-items: flex-start; flex-direction: column; gap: 5px; }
-  .source-picker { width: 100%; }
+  .source-picker { width: 100%; justify-content: flex-start; }
   .source-picker button { flex: 1; padding-right: 4px; padding-left: 4px; }
   .send { min-width: 54px; padding: 0 12px; }
   .send span { display: none; }
