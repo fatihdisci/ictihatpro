@@ -145,7 +145,12 @@ export async function getDecisionDocument(documentId: string): Promise<DecisionD
   });
   if (!result.content) throw new Error("Karar içeriği boş");
   const mimeType = result.mimeType ?? "application/octet-stream";
-  const bytes = Buffer.from(result.content, "base64");
+  const encoded = result.content.replace(/\s/g, "");
+  if (!encoded || encoded.length % 4 === 1 || !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)) {
+    throw new Error("Karar içeriği geçerli base64 değil");
+  }
+  const bytes = Buffer.from(encoded, "base64");
+  if (bytes.length === 0) throw new Error("Karar içeriği çözümlenemedi");
   if (mimeType.includes("html")) {
     return { text: turndown.turndown(bytes.toString("utf8")).trim(), mimeType };
   }

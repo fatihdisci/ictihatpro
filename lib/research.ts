@@ -7,6 +7,7 @@ import {
   type DecisionCollection,
   type DecisionSummary,
 } from "./bedesten";
+import { isBedestenRateLimitError, type BedestenRateLimitError } from "./bedesten-http";
 import { readDecisionCache, readLegislationCache, writeDecisionCache, writeLegislationCache } from "./cache";
 import { complete, type DeepSeekTool } from "./deepseek";
 import {
@@ -624,6 +625,7 @@ export async function researchAndAnswer(
   const candidates = new Map<string, DecisionSummary>();
   const legislationCandidates = new Map<string, { summary: LegislationSummary; plan: LegislationPlan; score: number }>();
   const evidence = new Map<string, Evidence>();
+  let rateLimitError: BedestenRateLimitError | null = null;
   const maxSources = Math.min(6, Math.max(1, Number(process.env.MAX_SOURCES ?? "3")));
   const maxEvidenceChars = Math.min(240_000, Math.max(60_000, Number(process.env.MAX_EVIDENCE_CHARS ?? "120000")));
   onProgress({ type: "status", message: "Arama planı hazırlanıyor" });
@@ -666,7 +668,10 @@ export async function researchAndAnswer(
 
   const searchResults = await Promise.allSettled(searchJobs);
   for (const settled of searchResults) {
-    if (settled.status !== "fulfilled") continue;
+    if (settled.status !== "fulfilled") {
+      if (isBedestenRateLimitError(settled.reason)) rateLimitError = settled.reason;
+      continue;
+    }
     if (settled.value.kind === "decision") {
       settled.value.result.decisions.forEach((decision) => candidates.set(decision.documentId, decision));
       continue;
@@ -696,7 +701,11 @@ export async function researchAndAnswer(
         maxEvidenceChars,
         onProgress
       );
-    } catch {
+    } catch (error) {
+      if (isBedestenRateLimitError(error)) {
+        rateLimitError = error;
+        break;
+      }
       // Başlığı doğru görünse bile aranan kavram aynı maddede değilse kaynak gösterilmez.
     }
   }
@@ -717,13 +726,18 @@ export async function researchAndAnswer(
         onProgress
       );
       decisionCount += 1;
-    } catch {
+    } catch (error) {
+      if (isBedestenRateLimitError(error)) {
+        rateLimitError = error;
+        break;
+      }
       // Kimliği doğrulanmayan veya güçlü kavramları taşımayan aday atlanır.
     }
   }
 
   const sources = [...evidence.values()];
   if (sources.length === 0) {
+    if (rateLimitError) throw rateLimitError;
     return {
       title: "Doğrulanabilir kaynak bulunamadı",
       summary: "Seçilen kaynaklarda soru ile doğrudan ilgili ve resmî metni açılabilen bir kaynak bulunamadı. Bu nedenle hukukî değerlendirme üretilmedi.",

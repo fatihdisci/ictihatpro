@@ -393,7 +393,12 @@ export default function Home() {
             setStatus("");
             setDetail("");
           } else if (event.type === "error") {
-            throw new Error(event.message || "Araştırma tamamlanamadı");
+            setError({
+              message: event.message || "Araştırma tamamlanamadı",
+              isRateLimit: event.code === "rate_limit_exceeded",
+            });
+            setQuestion(current);
+            return;
           }
         }
       }

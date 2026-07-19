@@ -1,6 +1,7 @@
 import * as z from "zod/v4";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { COURT_TYPES, getDecisionDocument, searchDecisions, verifyDecisionDocument } from "./bedesten";
+import { isBedestenRateLimitError } from "./bedesten-http";
 import { readDecisionCache, writeDecisionCache } from "./cache";
 import { selectEvidence } from "./evidence";
 import { getLegislationDocument, LEGISLATION_TYPES, searchLegislation } from "./mevzuat";
@@ -50,6 +51,18 @@ function result(data: Record<string, unknown>) {
 
 function failure(error: unknown) {
   const message = error instanceof Error ? error.message : "Bilinmeyen sunucu hatası";
+  if (isBedestenRateLimitError(error)) {
+    return {
+      isError: true,
+      content: [{ type: "text" as const, text: message }],
+      structuredContent: {
+        error: "rate_limit_exceeded",
+        statusCode: 429,
+        retryAfterSeconds: error.retryAfterSeconds,
+        message,
+      },
+    };
+  }
   return {
     isError: true,
     content: [{ type: "text" as const, text: message }],

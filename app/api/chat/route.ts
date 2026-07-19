@@ -2,6 +2,7 @@ import { z } from "zod";
 import { assertTrustedOrigin, clientAddress, isAuthorized } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { RESEARCH_SOURCES, researchAndAnswer } from "@/lib/research";
+import { isBedestenRateLimitError } from "@/lib/bedesten-http";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -53,7 +54,12 @@ export async function POST(request: Request) {
         send({ type: "done" });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Bilinmeyen hata";
-        send({ type: "error", message });
+        send({
+          type: "error",
+          message,
+          code: isBedestenRateLimitError(error) ? "rate_limit_exceeded" : "research_failed",
+          retryAfterSeconds: isBedestenRateLimitError(error) ? error.retryAfterSeconds : undefined,
+        });
       } finally {
         controller.close();
       }

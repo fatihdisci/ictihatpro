@@ -6,6 +6,7 @@ import {
   type DecisionSummary,
 } from "../lib/bedesten";
 import { resolveChamber } from "../lib/chambers";
+import { BedestenRateLimitError } from "../lib/bedesten-http";
 
 const summary: DecisionSummary = {
   documentId: "123456",
@@ -119,5 +120,19 @@ describe("Bedesten arama isteği", () => {
     ]);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("sunucunun 429 yanıtını sonuç yok gibi gizlemek yerine yeniden deneme süresiyle bildirir", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 429,
+      headers: new Headers({ "Retry-After": "12" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(searchDecisions({ phrase: "muris muvazaası", court: "YARGITAY" })).rejects.toMatchObject({
+      name: "BedestenRateLimitError",
+      retryAfterSeconds: 13,
+    } satisfies Partial<BedestenRateLimitError>);
   });
 });

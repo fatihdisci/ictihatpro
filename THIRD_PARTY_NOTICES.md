@@ -4,8 +4,9 @@ Bu proje çalışma zamanında aşağıdaki kaynak depolara bağlı değildir. B
 
 - [saidsurucu/mevzuat-mcp](https://github.com/saidsurucu/mevzuat-mcp)
 - [saidsurucu/yargi-cli](https://github.com/saidsurucu/yargi-cli)
+- [saidsurucu/yargi-mcp](https://github.com/saidsurucu/yargi-mcp)
 
-Her iki proje MIT lisanslı olarak yayımlanmıştır. `mevzuat-mcp` deposundaki lisans bildirimi aşağıda korunmuştur; `yargi-cli` paket metadata'sı da lisansı MIT olarak beyan eder.
+Bu projeler MIT lisanslı olarak yayımlanmıştır. `mevzuat-mcp` ve `yargi-mcp` depolarındaki lisans bildirimi aşağıda korunmuştur; `yargi-cli` paket metadata'sı da lisansı MIT olarak beyan eder.
 
 ```text
 MIT License

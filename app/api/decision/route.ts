@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { assertTrustedOrigin, clientAddress, isAuthorized } from "@/lib/auth";
 import { getDecisionDocument } from "@/lib/bedesten";
+import { isBedestenRateLimitError } from "@/lib/bedesten-http";
 import { readDecisionCache, writeDecisionCache } from "@/lib/cache";
 import { rateLimit } from "@/lib/rate-limit";
 
@@ -42,6 +43,12 @@ export async function GET(request: Request) {
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Karar metni alınamadı";
+    if (isBedestenRateLimitError(error)) {
+      return Response.json(
+        { error: message, retryAfterSeconds: error.retryAfterSeconds },
+        { status: 429, headers: { "Retry-After": String(error.retryAfterSeconds) } }
+      );
+    }
     return Response.json({ error: message }, { status: 502 });
   }
 }
