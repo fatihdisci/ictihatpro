@@ -1,12 +1,36 @@
 import "./globals.css";
 import Script from "next/script";
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 
-export const metadata: Metadata = {
-  title: "İçtihat Asistanı",
-  description: "Kaynak doğrulamalı kişisel Türk hukuk araştırma asistanı",
-  robots: { index: false, follow: false, nocache: true },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const requestHeaders = await headers();
+  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "localhost:3000";
+  const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
+  const metadataBase = new URL(`${protocol}://${host}`);
+  const title = "İçtihat Asistanı";
+  const description = "Kaynak doğrulamalı, editoryal Türk hukuk araştırma alanı.";
+
+  return {
+    metadataBase,
+    title,
+    description,
+    robots: { index: false, follow: false, nocache: true },
+    openGraph: {
+      title,
+      description,
+      type: "website",
+      locale: "tr_TR",
+      images: [{ url: "/og.png", width: 1200, height: 630, alt: "İçtihat Asistanı — Kararı değil, dayanağını bulun." }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: ["/og.png"],
+    },
+  };
+}
 
 export const viewport: Viewport = {
   width: "device-width",

@@ -344,11 +344,13 @@ export default function Home() {
   if (!authenticated) {
     return (
       <main className="login-shell" id="main-content">
+        <div className="login-ambient" aria-hidden="true" />
         <section className="login-panel">
+          <div className="login-panel-topline"><span>İÇTİHAT / 01</span><span>GÜVENLİ ALAN</span></div>
           <div className="seal">İA</div>
           <div className="eyebrow">Kişisel hukuk araştırma alanı</div>
           <h1>İçtihat Asistanı</h1>
-          <p>Yalnızca doğrulanan Bedesten kararlarına bağlı, kaynak kontrollü araştırma.</p>
+          <p>Doğrulanmış kararlar üzerinden, kaynakları görünür kalan hukuk araştırması.</p>
           {!configured && <div className="config-warning">Sunucu yapılandırması eksik. APP_PASSWORD ve SESSION_SECRET değerlerini ekleyin.</div>}
           <label htmlFor="password">Erişim parolası</label>
           <input
@@ -361,7 +363,7 @@ export default function Home() {
             autoFocus
           />
           {loginError && <p className="form-error" role="alert">{loginError}</p>}
-          <button className="primary" onClick={login} disabled={!password}>Güvenli giriş</button>
+          <button className="primary" onClick={login} disabled={!password}>Araştırma alanına gir <span aria-hidden="true">↗</span></button>
           <div className="login-foot"><span className="dot" /> API anahtarı tarayıcıya gönderilmez</div>
         </section>
       </main>
@@ -373,10 +375,11 @@ export default function Home() {
       <header className="topbar">
         <div className="identity">
           <div className="seal small">İA</div>
-          <div><strong>İçtihat Asistanı</strong><span>Kaynak kontrollü araştırma</span></div>
+          <div><strong>İçtihat Asistanı</strong><span>Hukuk araştırma masası</span></div>
         </div>
         <div className="top-actions">
-          <span className="model-badge">{model}</span>
+          <span className="model-badge"><i /> Doğrulama açık</span>
+          <span className="model-name">{model}</span>
           <button
             className="theme-toggle"
             onClick={toggleTheme}
@@ -391,13 +394,36 @@ export default function Home() {
       <div className="content">
         {researches.length === 0 && (
           <section className="welcome">
-            <div className="welcome-mark">§</div>
-            <h1>Kararı değil, dayanağını bulun.</h1>
-            <p>Asistan önce Bedesten’de arar, kararın tam metnini açar, esas ve karar numaralarını metin içinde doğrular; yalnızca bundan sonra cevap üretir.</p>
-            <div className="principles">
+            <div className="welcome-grid">
+              <div className="welcome-copy">
+                <div className="welcome-overline"><span>İÇTİHAT DEFTERİ</span><span>2026</span></div>
+                <div className="welcome-mark">§</div>
+                <h1>Kararı değil,<br /><em>dayanağını</em> bulun.</h1>
+                <p>Asistan önce Bedesten’de arar; kararın tam metnini açar, esas ve karar numaralarını metin içinde doğrular. Yalnızca bundan sonra cevap üretir.</p>
+              </div>
+              <aside className="research-method" aria-label="Araştırma yöntemi">
+                <div className="method-header"><span>ARAŞTIRMA PROTOKOLÜ</span><b>01—03</b></div>
+                <ol>
+                  <li><span>01</span><div><strong>İz sür</strong><p>Bedesten’de konuyu, daireyi ve zamanı daralt.</p></div></li>
+                  <li><span>02</span><div><strong>Metni doğrula</strong><p>Kararı doğrudan kaynağından kontrol et.</p></div></li>
+                  <li><span>03</span><div><strong>Dayanağı oku</strong><p>Atıfları kararın tamamıyla birlikte değerlendir.</p></div></li>
+                </ol>
+                <div className="method-note">Kaynaklar görünür; belirsizlikler saklanmaz.</div>
+              </aside>
+            </div>
+            <div className="principles" aria-label="Araştırma ilkeleri">
               <div><b>01</b><span>Tam metin kontrolü</span></div>
-              <div><b>02</b><span>Sunucu taraflı atıf</span></div>
-              <div><b>03</b><span>Uydurma kaynak reddi</span></div>
+              <div><b>02</b><span>Kaynakla birlikte değerlendirme</span></div>
+              <div><b>03</b><span>Belirsizliği açıkça işaretleme</span></div>
+            </div>
+            <div className="prompt-suggestions" aria-label="Örnek araştırma soruları">
+              <span>Başlamak için</span>
+              {[
+                "İşe iade davasında fesih bildiriminin geçersizliği hangi ölçütlerle değerlendirilir?",
+                "Tacirler arası satımda ayıba karşı tekeffül hükümleri nasıl uygulanır?",
+              ].map((prompt) => (
+                <button key={prompt} onClick={() => setQuestion(prompt)} disabled={busy}>{prompt}</button>
+              ))}
             </div>
           </section>
         )}
@@ -433,25 +459,29 @@ export default function Home() {
 
       <div className="composer-wrap" ref={composerRef}>
         <div className="composer">
-          <textarea
-            value={question}
-            onChange={(event) => setQuestion(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                submit();
-              }
-            }}
-            placeholder="Uyuşmazlığı, aradığınız hukuki ölçütü ve varsa mahkeme/daireyi yazın…"
-            rows={2}
-            maxLength={6000}
-            disabled={busy}
-          />
+          <div className="composer-field">
+            <label htmlFor="research-question">Yeni araştırma</label>
+            <textarea
+              id="research-question"
+              value={question}
+              onChange={(event) => setQuestion(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  submit();
+                }
+              }}
+              placeholder="Uyuşmazlığı, aradığınız hukuki ölçütü ve varsa mahkeme/daireyi yazın…"
+              rows={2}
+              maxLength={6000}
+              disabled={busy}
+            />
+          </div>
           <button className="send" onClick={submit} disabled={busy || question.trim().length < 5} aria-label="Araştırmayı başlat">
-            {busy ? "Bekleyin" : "Araştır"}
+            <span>{busy ? "Araştırılıyor" : "Araştır"}</span><b aria-hidden="true">↗</b>
           </button>
         </div>
-        <p>Her soru bağımsız araştırılır. Daha iyi sonuç için olay türü, hukuki sorun ve tarih aralığını açıkça yazın.</p>
+        <p><kbd>↵</kbd> araştır &nbsp; <span>·</span> &nbsp; Her soru bağımsız araştırılır; olay türü, hukukî sorun ve tarih aralığını açıkça yazın.</p>
       </div>
     </main>
   );
