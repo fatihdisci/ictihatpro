@@ -1,0 +1,36 @@
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { createMcpServer } from "../lib/mcp";
+
+const originalSecret = process.env.SESSION_SECRET;
+
+describe("MCP sunucusu", () => {
+  beforeEach(() => {
+    process.env.SESSION_SECRET = "test-secret-that-is-longer-than-thirty-two-characters";
+  });
+
+  afterEach(() => {
+    if (originalSecret == null) delete process.env.SESSION_SECRET;
+    else process.env.SESSION_SECRET = originalSecret;
+  });
+
+  it("dört salt-okunur hukuk aracını protokol üzerinden listeler", async () => {
+    const server = createMcpServer();
+    const client = new Client({ name: "ictihat-test-client", version: "1.0.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+
+    const listed = await client.listTools();
+
+    expect(listed.tools.map((tool) => tool.name)).toEqual([
+      "ictihat_ara",
+      "ictihat_getir",
+      "mevzuat_ara",
+      "mevzuat_getir",
+    ]);
+    expect(listed.tools.every((tool) => tool.annotations?.readOnlyHint === true)).toBe(true);
+    await client.close();
+    await server.close();
+  });
+});

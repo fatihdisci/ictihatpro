@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getDecisionDocument, searchDecisions, verifyDecisionDocument } from "../lib/bedesten";
+import { getLegislationDocument, searchLegislation } from "../lib/mevzuat";
 
 const live = process.env.LIVE_BEDESTEN === "1" ? describe : describe.skip;
 
@@ -12,6 +13,17 @@ live("Bedesten canlı uyumluluk", () => {
       const candidate = result.decisions[0];
       const document = await getDecisionDocument(candidate.documentId);
       expect(verifyDecisionDocument(candidate, document.text).verified).toBe(true);
+    },
+    60_000
+  );
+
+  it(
+    "mevzuat arayıp resmî metni indirir",
+    async () => {
+      const result = await searchLegislation({ name: "Türk Borçlar Kanunu", number: "6098", types: ["KANUN"] });
+      expect(result.documents.length).toBeGreaterThan(0);
+      const document = await getLegislationDocument(result.documents[0].legislationId);
+      expect(document.text.length).toBeGreaterThan(1000);
     },
     60_000
   );

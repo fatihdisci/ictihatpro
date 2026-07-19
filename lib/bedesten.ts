@@ -1,5 +1,6 @@
 import TurndownService from "turndown";
 import { extractText } from "unpdf";
+import { resolveChamber } from "./chambers";
 
 const BASE = "https://bedesten.adalet.gov.tr";
 const SEARCH = "/emsal-karar/searchDocuments";
@@ -132,7 +133,8 @@ export async function searchDecisions(params: {
     sortFields: ["KARAR_TARIHI"],
     sortDirection: "desc",
   };
-  if (params.chamber) data.birimAdi = params.chamber;
+  const chamber = resolveChamber(params.chamber);
+  if (chamber) data.birimAdi = chamber;
   if (params.startDate) data.kararTarihiStart = isoDate(params.startDate);
   if (params.endDate) data.kararTarihiEnd = isoDate(params.endDate, true);
 

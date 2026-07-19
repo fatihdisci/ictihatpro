@@ -4,6 +4,7 @@ import {
   verifyDecisionDocument,
   type DecisionSummary,
 } from "../lib/bedesten";
+import { resolveChamber } from "../lib/chambers";
 
 const summary: DecisionSummary = {
   documentId: "123456",
@@ -16,6 +17,14 @@ const summary: DecisionSummary = {
 };
 
 describe("Bedesten metadata korumaları", () => {
+  it("daire kısa kodlarını tam birim adına çevirir", () => {
+    expect(resolveChamber("H9")).toBe("9. Hukuk Dairesi");
+    expect(resolveChamber("iddk")).toBe("İdare Dava Daireleri Kurulu");
+    expect(resolveChamber("Ankara Bölge Adliye Mahkemesi 1. Hukuk Dairesi")).toBe(
+      "Ankara Bölge Adliye Mahkemesi 1. Hukuk Dairesi"
+    );
+  });
+
   it("makul tarihleri tek biçime çevirir", () => {
     expect(plausibleDecisionDate("12.03.2024")).toBe("12.03.2024");
     expect(plausibleDecisionDate("2024-03-12T00:00:00Z")).toBe("12.03.2024");
