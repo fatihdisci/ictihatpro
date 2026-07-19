@@ -346,11 +346,11 @@ export default function Home() {
       <main className="login-shell" id="main-content">
         <div className="login-ambient" aria-hidden="true" />
         <section className="login-panel">
-          <div className="login-panel-topline"><span>İÇTİHAT / 01</span><span>GÜVENLİ ALAN</span></div>
+          <div className="login-panel-topline"><span>İÇTİHAT ASİSTANI</span><span>OTURUM</span></div>
           <div className="seal">İA</div>
-          <div className="eyebrow">Kişisel hukuk araştırma alanı</div>
+          <div className="eyebrow">Giriş</div>
           <h1>İçtihat Asistanı</h1>
-          <p>Doğrulanmış kararlar üzerinden, kaynakları görünür kalan hukuk araştırması.</p>
+          <p>Devam etmek için parolanızı girin.</p>
           {!configured && <div className="config-warning">Sunucu yapılandırması eksik. APP_PASSWORD ve SESSION_SECRET değerlerini ekleyin.</div>}
           <label htmlFor="password">Erişim parolası</label>
           <input
@@ -363,7 +363,7 @@ export default function Home() {
             autoFocus
           />
           {loginError && <p className="form-error" role="alert">{loginError}</p>}
-          <button className="primary" onClick={login} disabled={!password}>Araştırma alanına gir <span aria-hidden="true">↗</span></button>
+          <button className="primary" onClick={login} disabled={!password}>Giriş yap <span aria-hidden="true">↗</span></button>
           <div className="login-foot"><span className="dot" /> API anahtarı tarayıcıya gönderilmez</div>
         </section>
       </main>
@@ -375,10 +375,10 @@ export default function Home() {
       <header className="topbar">
         <div className="identity">
           <div className="seal small">İA</div>
-          <div><strong>İçtihat Asistanı</strong><span>Hukuk araştırma masası</span></div>
+          <div><strong>İçtihat Asistanı</strong><span>Araştırma</span></div>
         </div>
         <div className="top-actions">
-          <span className="model-badge"><i /> Doğrulama açık</span>
+          <span className="model-badge"><i /> Kaynak kontrolü</span>
           <span className="model-name">{model}</span>
           <button
             className="theme-toggle"
@@ -396,28 +396,27 @@ export default function Home() {
           <section className="welcome">
             <div className="welcome-grid">
               <div className="welcome-copy">
-                <div className="welcome-overline"><span>İÇTİHAT DEFTERİ</span><span>2026</span></div>
-                <div className="welcome-mark">§</div>
-                <h1>Kararı değil,<br /><em>dayanağını</em> bulun.</h1>
-                <p>Asistan önce Bedesten’de arar; kararın tam metnini açar, esas ve karar numaralarını metin içinde doğrular. Yalnızca bundan sonra cevap üretir.</p>
+                <div className="welcome-overline"><span>ARAŞTIRMA</span><span>BEDesten</span></div>
+                <h1>İçtihat<br /><em>araştırması</em></h1>
+                <p>Uyuşmazlığı, aradığınız hukukî ölçütü veya karar bilgilerini yazın. Sonuçlar kaynaklarıyla birlikte burada görünür.</p>
               </div>
-              <aside className="research-method" aria-label="Araştırma yöntemi">
-                <div className="method-header"><span>ARAŞTIRMA PROTOKOLÜ</span><b>01—03</b></div>
+              <aside className="research-method" aria-label="Sorgu ipuçları">
+                <div className="method-header"><span>SORGUNUZDA OLSUN</span><b>İPUÇLARI</b></div>
                 <ol>
-                  <li><span>01</span><div><strong>İz sür</strong><p>Bedesten’de konuyu, daireyi ve zamanı daralt.</p></div></li>
-                  <li><span>02</span><div><strong>Metni doğrula</strong><p>Kararı doğrudan kaynağından kontrol et.</p></div></li>
-                  <li><span>03</span><div><strong>Dayanağı oku</strong><p>Atıfları kararın tamamıyla birlikte değerlendir.</p></div></li>
+                  <li><span>01</span><div><strong>Konu</strong><p>Uyuşmazlığı kısa ve açık biçimde yazın.</p></div></li>
+                  <li><span>02</span><div><strong>Ölçüt</strong><p>Aradığınız hukukî sorunu ekleyin.</p></div></li>
+                  <li><span>03</span><div><strong>Sınır</strong><p>Varsa daire, tarih veya karar numarasını belirtin.</p></div></li>
                 </ol>
-                <div className="method-note">Kaynaklar görünür; belirsizlikler saklanmaz.</div>
+                <div className="method-note">Birden fazla ayrık konu için ayrı soru yazın.</div>
               </aside>
             </div>
-            <div className="principles" aria-label="Araştırma ilkeleri">
-              <div><b>01</b><span>Tam metin kontrolü</span></div>
-              <div><b>02</b><span>Kaynakla birlikte değerlendirme</span></div>
-              <div><b>03</b><span>Belirsizliği açıkça işaretleme</span></div>
+            <div className="principles" aria-label="Araştırma notları">
+              <div><b>01</b><span>Her soru ayrı yürütülür</span></div>
+              <div><b>02</b><span>Kaynaklar yanıtın altında listelenir</span></div>
+              <div><b>03</b><span>İhtiyacınız oldukça ayrıntı ekleyin</span></div>
             </div>
             <div className="prompt-suggestions" aria-label="Örnek araştırma soruları">
-              <span>Başlamak için</span>
+              <span>Örnek sorular</span>
               {[
                 "İşe iade davasında fesih bildiriminin geçersizliği hangi ölçütlerle değerlendirilir?",
                 "Tacirler arası satımda ayıba karşı tekeffül hükümleri nasıl uygulanır?",
