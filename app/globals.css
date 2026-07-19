@@ -179,6 +179,14 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .source-foot { margin-top: 3px; font-size: 10px; }
 .partial { color: #8d6224; }
 .official-link { font-size: 11px; text-decoration: none; border-bottom: 1px solid currentColor; white-space: nowrap; }
+.source { align-items: start; }
+.source-actions { display: grid; gap: 8px; justify-items: end; padding-top: 4px; }
+.official-link.as-button { border: 0; border-bottom: 1px solid currentColor; background: transparent; color: inherit; font: inherit; font-size: 11px; padding: 0; cursor: pointer; }
+.decision-text { margin-top: 12px; padding: 14px 16px; max-height: 460px; overflow: auto; border: 1px solid var(--line); background: #fffdf7; font-size: 13px; line-height: 1.6; }
+.decision-text pre { white-space: pre-wrap; word-break: break-word; font: inherit; margin: 0; }
+.decision-text p { margin: 0 0 10px; }
+.decision-wait { color: var(--muted); }
+.decision-error { color: var(--danger); }
 .legal-note { margin: 30px 0 0 !important; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
 
 .progress { margin: 28px 0; display: grid; grid-template-columns: 120px 1fr; gap: 18px; align-items: center; color: var(--forest); }

@@ -42,6 +42,72 @@ function Markdown({ children }: { children: string }) {
   return <ReactMarkdown remarkPlugins={[remarkGfm]}>{children}</ReactMarkdown>;
 }
 
+type DecisionText =
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "ready"; text: string; mimeType: string };
+
+function SourceCard({ source }: { source: Source }) {
+  const [open, setOpen] = useState(false);
+  const [decision, setDecision] = useState<DecisionText | null>(null);
+
+  async function toggleText() {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    setOpen(true);
+    if (decision?.status === "ready" || decision?.status === "loading") return;
+    setDecision({ status: "loading" });
+    try {
+      const response = await fetch(`/api/decision?id=${encodeURIComponent(source.documentId)}`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      setDecision({ status: "ready", text: data.text, mimeType: data.mimeType });
+    } catch (caught) {
+      setDecision({ status: "error", message: caught instanceof Error ? caught.message : "Karar metni alınamadı" });
+    }
+  }
+
+  return (
+    <article className="source" id={`source-${source.id}`}>
+      <div className="source-id">{source.id}</div>
+      <div className="source-main">
+        <strong>{[source.court, source.chamber].filter(Boolean).join(" · ") || "Mahkeme bilgisi yok"}</strong>
+        <div className="source-meta">
+          <span>{source.esasNo ? `${source.esasNo} E.` : "Esas no doğrulanamadı"}</span>
+          <span>{source.kararNo ? `${source.kararNo} K.` : "Karar no doğrulanamadı"}</span>
+          <span>{source.date ?? "Tarih verisi doğrulanamadı"}</span>
+        </div>
+        <div className="source-foot">
+          <span>Bedesten belge no: {source.documentId}</span>
+          {!source.evidenceComplete && <span className="partial">Seçili pasajlar incelendi</span>}
+        </div>
+        {open && (
+          <div className="decision-text" aria-live="polite">
+            {(!decision || decision.status === "loading") && <p className="decision-wait">Karar metni yükleniyor…</p>}
+            {decision?.status === "error" && <p className="decision-error">{decision.message}</p>}
+            {decision?.status === "ready" &&
+              (decision.mimeType.includes("pdf") ? (
+                <pre>{decision.text}</pre>
+              ) : (
+                <Markdown>{decision.text}</Markdown>
+              ))}
+          </div>
+        )}
+      </div>
+      <div className="source-actions">
+        <button className="official-link as-button" onClick={toggleText}>
+          {open ? "Metni gizle" : "Tam metin"}
+        </button>
+        <a href={source.sourceUrl} target="_blank" rel="noreferrer" className="official-link">
+          Resmî sistem
+        </a>
+      </div>
+    </article>
+  );
+}
+
 function AnswerView({ answer }: { answer: Answer }) {
   return (
     <article className="answer-card">
@@ -75,24 +141,7 @@ function AnswerView({ answer }: { answer: Answer }) {
           </div>
           <div className="source-list">
             {answer.sources.map((source) => (
-              <article className="source" id={`source-${source.id}`} key={source.id}>
-                <div className="source-id">{source.id}</div>
-                <div className="source-main">
-                  <strong>{[source.court, source.chamber].filter(Boolean).join(" · ") || "Mahkeme bilgisi yok"}</strong>
-                  <div className="source-meta">
-                    <span>{source.esasNo ? `${source.esasNo} E.` : "Esas no doğrulanamadı"}</span>
-                    <span>{source.kararNo ? `${source.kararNo} K.` : "Karar no doğrulanamadı"}</span>
-                    <span>{source.date ?? "Tarih verisi doğrulanamadı"}</span>
-                  </div>
-                  <div className="source-foot">
-                    <span>Bedesten belge no: {source.documentId}</span>
-                    {!source.evidenceComplete && <span className="partial">Seçili pasajlar incelendi</span>}
-                  </div>
-                </div>
-                <a href={source.sourceUrl} target="_blank" rel="noreferrer" className="official-link">
-                  Resmî sistem
-                </a>
-              </article>
+              <SourceCard source={source} key={source.id} />
             ))}
           </div>
         </section>
