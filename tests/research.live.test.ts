@@ -36,4 +36,21 @@ live("canlı birleşik araştırma", () => {
     },
     180_000
   );
+
+  it(
+    "hazır tahliye taahhüdü araştırmasında karar ve Türk Borçlar Kanunu'nu birlikte döndürür",
+    async () => {
+      const answer = await researchAndAnswer(
+        "Tahliye taahhütnamesinin geçerlilik şartları ve tahliye davasındaki etkisi nasıl değerlendirilir?",
+        () => undefined,
+        undefined,
+        ["YARGITAY", "ISTINAF", "MEVZUAT"],
+        "sources"
+      );
+
+      expect(answer.sources.some((source) => source.kind === "decision")).toBe(true);
+      expect(answer.sources.some((source) => source.kind === "legislation" && source.number === "6098")).toBe(true);
+    },
+    180_000
+  );
 });

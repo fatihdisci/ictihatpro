@@ -185,12 +185,12 @@ const KNOWN_ROUTES: KnownRoute[] = [
     legislation: [{ phrase: "mirasın reddi", name: "Türk Medeni Kanunu", number: "4721", types: ["KANUN"], articleQuery: "miras AND reddolunabilir" }],
   },
   {
-    test: /kıdem\s+tazminat/iu,
+    test: /kıdem.{0,45}tazminat|ihbar.{0,45}tazminat/iu,
     decisionQuery: '"kıdem tazminatı" AND fesih',
     legislation: [{ phrase: "kıdem tazminatı", name: "İş Kanunu", number: "1475", types: ["KANUN"], articleQuery: "kıdem AND tazminat" }],
   },
   {
-    test: /işe\s+iade|işe\s+başlatmama/iu,
+    test: /[İi]şe\s+iade|[İi]şe\s+başlatmama/iu,
     decisionQuery: '"işe iade" AND geçersiz fesih',
     legislation: [{ phrase: "geçersiz fesih işe iade", name: "İş Kanunu", number: "4857", types: ["KANUN"], articleQuery: "işe AND başlatılmazsa" }],
   },
@@ -205,11 +205,136 @@ const KNOWN_ROUTES: KnownRoute[] = [
     legislation: [{ phrase: "ayıplı mal", name: "Tüketicinin Korunması Hakkında Kanun", number: "6502", types: ["KANUN"], articleQuery: "ayıplı AND mal" }],
   },
   {
-    test: /tapu\s+iptal.*tescil|yolsuz\s+tescil/iu,
+    test: /(?!.*muris\s+muvazaa)(?:tapu\s+iptal.*tescil|yolsuz\s+tescil)/iu,
     decisionQuery: '"tapu iptal ve tescil" AND yolsuz tescil',
     legislation: [{ phrase: "yolsuz tescil", name: "Türk Medeni Kanunu", number: "4721", types: ["KANUN"], articleQuery: "yolsuz AND tescil" }],
   },
+  {
+    test: /tahliye.*taahhüt|taahhüt.*tahliye/iu,
+    decisionQuery: '"tahliye taahhüdü" AND geçerlilik',
+    legislation: [{ phrase: "tahliye taahhüdü", name: "Türk Borçlar Kanunu", number: "6098", types: ["KANUN"], articleQuery: "boşaltmayı AND üstlendiği" }],
+  },
+  {
+    test: /iki.*haklı.*ihtar|haklı.*ihtar/iu,
+    decisionQuery: '"iki haklı ihtar"',
+    legislation: [{ phrase: "iki haklı ihtar", name: "Türk Borçlar Kanunu", number: "6098", types: ["KANUN"], articleQuery: "iki AND ihtar" }],
+  },
+  {
+    test: /kira.*uyarla|uyarla.*kira|aşırı.*ifa/iu,
+    decisionQuery: '"aşırı ifa güçlüğü" AND kira',
+    legislation: [{ phrase: "aşırı ifa güçlüğü", name: "Türk Borçlar Kanunu", number: "6098", types: ["KANUN"], articleQuery: "aşırı AND güçleşmesi" }],
+  },
+  {
+    test: /depozito|güvence.*bedeli/iu,
+    decisionQuery: "depozito AND kira",
+    legislation: [{ phrase: "güvence bedeli", name: "Türk Borçlar Kanunu", number: "6098", types: ["KANUN"], articleQuery: "güvence AND bedeli" }],
+  },
+  {
+    test: /katılma.*alacağ|değer.*artış.*pay/iu,
+    decisionQuery: '"katılma alacağı" AND "değer artış"',
+    legislation: [{ phrase: "edinilmiş mallara katılma", name: "Türk Medeni Kanunu", number: "4721", types: ["KANUN"], articleQuery: "edinilmiş AND katılma" }],
+  },
+  {
+    test: /[İi]ştirak\s+nafaka/iu,
+    decisionQuery: '"iştirak nafakası"',
+    legislation: [{ phrase: "çocuğun bakım giderleri", name: "Türk Medeni Kanunu", number: "4721", types: ["KANUN"], articleQuery: "bakım AND giderlerine" }],
+  },
+  {
+    test: /yıllık.*izin|izin.*ücret/iu,
+    decisionQuery: '"yıllık izin" AND ücret',
+    legislation: [{ phrase: "yıllık ücretli izin", name: "İş Kanunu", number: "4857", types: ["KANUN"], articleQuery: "yıllık AND izin" }],
+  },
+  {
+    test: /[İi]ş\s+kazası/iu,
+    decisionQuery: '"iş kazası" AND tazminat',
+    legislation: [{ phrase: "iş kazası", name: "Sosyal Sigortalar ve Genel Sağlık Sigortası Kanunu", number: "5510", types: ["KANUN"], articleQuery: "iş AND kazası" }],
+  },
+  {
+    test: /menfi.*tespit|istirdat/iu,
+    decisionQuery: '"menfi tespit" AND istirdat',
+    legislation: [{ phrase: "menfi tespit", name: "İcra ve İflas Kanunu", number: "2004", types: ["KANUN"], articleQuery: "menfi AND tespit" }],
+  },
+  {
+    test: /icra.*itiraz|itiraz.*kaldır/iu,
+    decisionQuery: '"itirazın kaldırılması" AND icra',
+    legislation: [{ phrase: "itirazın kaldırılması", name: "İcra ve İflas Kanunu", number: "2004", types: ["KANUN"], articleQuery: "itiraz AND kaldırılması" }],
+  },
+  {
+    test: /tasarruf.*iptal|iptal.*tasarruf/iu,
+    decisionQuery: '"tasarrufun iptali" AND aciz',
+    legislation: [{ phrase: "tasarrufun iptali", name: "İcra ve İflas Kanunu", number: "2004", types: ["KANUN"], articleQuery: "tasarrufların AND iptali" }],
+  },
+  {
+    test: /muris.*muvazaa/iu,
+    decisionQuery: '"muris muvazaası"',
+    legislation: [{ phrase: "yolsuz tescil", name: "Türk Medeni Kanunu", number: "4721", types: ["KANUN"], articleQuery: "yolsuz AND tescil" }],
+  },
+  {
+    test: /tenkis.*saklı|saklı.*pay/iu,
+    decisionQuery: '"tenkis davası" AND "saklı pay"',
+    legislation: [{ phrase: "saklı pay", name: "Türk Medeni Kanunu", number: "4721", types: ["KANUN"], articleQuery: "saklı AND pay" }],
+  },
+  {
+    test: /vasiyet.*iptal/iu,
+    decisionQuery: '"vasiyetnamenin iptali"',
+    legislation: [{ phrase: "vasiyetnamenin iptali", name: "Türk Medeni Kanunu", number: "4721", types: ["KANUN"], articleQuery: "iptal AND vasiyetname" }],
+  },
+  {
+    test: /önalım|şufa/iu,
+    decisionQuery: '"yasal önalım" AND süre',
+    legislation: [{ phrase: "yasal önalım", name: "Türk Medeni Kanunu", number: "4721", types: ["KANUN"], articleQuery: "yasal AND önalım" }],
+  },
+  {
+    test: /cayma.*tüketici|mesafeli.*cayma/iu,
+    decisionQuery: '"cayma hakkı" AND tüketici',
+    legislation: [{ phrase: "cayma hakkı", name: "Tüketicinin Korunması Hakkında Kanun", number: "6502", types: ["KANUN"], articleQuery: "cayma AND hakkı" }],
+  },
+  {
+    test: /tüketici.*hakem/iu,
+    decisionQuery: '"tüketici hakem heyeti" AND itiraz',
+    legislation: [{ phrase: "tüketici hakem heyeti", name: "Tüketicinin Korunması Hakkında Kanun", number: "6502", types: ["KANUN"], articleQuery: "tüketici AND hakem" }],
+  },
+  {
+    test: /destekten.*yoksun/iu,
+    decisionQuery: '"destekten yoksun kalma" AND tazminat',
+    legislation: [{ phrase: "destekten yoksun kalma", name: "Türk Borçlar Kanunu", number: "6098", types: ["KANUN"], articleQuery: "destekten AND yoksun" }],
+  },
+  {
+    test: /yönetim.*kurulu.*sorumlu|şirket.*yönetici.*sorumlu/iu,
+    decisionQuery: '"yönetim kurulu" AND sorumluluk',
+    legislation: [{ phrase: "yönetim kurulu sorumluluğu", name: "Türk Ticaret Kanunu", number: "6102", types: ["KANUN"], articleQuery: "yönetim AND sorumluluğu" }],
+  },
+  {
+    test: /haksız\s+rekabet/iu,
+    decisionQuery: '"haksız rekabet" AND tazminat',
+    legislation: [{ phrase: "haksız rekabet", name: "Türk Ticaret Kanunu", number: "6102", types: ["KANUN"], articleQuery: "haksız AND rekabet" }],
+  },
+  {
+    test: /hakaret.*(?:suç|aleniyet)|(?:suç|aleniyet).*hakaret/iu,
+    decisionQuery: "hakaret AND aleniyet",
+    legislation: [{ phrase: "hakaret", name: "Türk Ceza Kanunu", number: "5237", types: ["KANUN"], articleQuery: "onur AND saygınlığı" }],
+  },
+  {
+    test: /kasten.*yaralama|yaralama.*kasten/iu,
+    decisionQuery: "kasten AND yaralama",
+    legislation: [{ phrase: "kasten yaralama", name: "Türk Ceza Kanunu", number: "5237", types: ["KANUN"], articleQuery: "vücuduna AND acı" }],
+  },
+  {
+    test: /iptal.*dava|idari.*iptal/iu,
+    decisionQuery: '"iptal davası" AND süre',
+    legislation: [{ phrase: "iptal davası", name: "İdari Yargılama Usulü Kanunu", number: "2577", types: ["KANUN"], articleQuery: "iptal AND dava" }],
+  },
+  {
+    test: /yürütmenin\s+durdur/iu,
+    decisionQuery: '"yürütmenin durdurulması" AND "telafisi güç"',
+    legislation: [{ phrase: "yürütmenin durdurulması", name: "İdari Yargılama Usulü Kanunu", number: "2577", types: ["KANUN"], articleQuery: "telafisi AND güç" }],
+  },
 ];
+
+/** Hazır araştırmaların model planlayıcısına bağımlı kalmadığını doğrulamak için. */
+export function hasKnownResearchRoute(question: string): boolean {
+  return KNOWN_ROUTES.some((route) => route.test.test(question));
+}
 
 const SYNTHESIS_TOOL: DeepSeekTool = {
   type: "function",

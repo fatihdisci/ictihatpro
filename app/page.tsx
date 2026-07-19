@@ -7,7 +7,7 @@ import { Composer } from "./_components/Composer";
 import { LoginGate } from "./_components/LoginGate";
 import { ArrowUpRight, Moon, Sun } from "./_components/Icons";
 import { circularThemeSwap, spring } from "./_lib/motion";
-import { ALL_SOURCES, QUICK_SEARCHES, type Research, type ResearchSource } from "./_lib/types";
+import { ALL_SOURCES, QUICK_SEARCHES, type QuickSearch, type Research, type ResearchSource } from "./_lib/types";
 
 // Sıralı giriş için açık gecikmeli yükselme. Ebeveyn→çocuk variant yayılımına
 // güvenmek yerine her öğe kendi initial/animate'ini taşır; HMR yeniden
@@ -35,6 +35,7 @@ export default function Home() {
   const dockRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastQuestionRef = useRef("");
+  const lastSourcesRef = useRef<ResearchSource[]>(ALL_SOURCES);
   const reduced = useReducedMotion();
 
   // Bir cevap geldiyse composer alta sabitlenir. İlk arama sırasında (busy ama
@@ -113,19 +114,20 @@ export default function Home() {
     setResearches([]);
   }
 
-  async function runResearch(current: string) {
+  async function runResearch(current: string, sources: readonly ResearchSource[] = selectedSources) {
     setBusy(true);
     setError(null);
     setStatus("Araştırma hazırlanıyor");
     setDetail("");
     setProgressCount(0);
     lastQuestionRef.current = current;
+    lastSourcesRef.current = [...sources];
 
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: current, sources: selectedSources }),
+        body: JSON.stringify({ question: current, sources }),
       });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -189,7 +191,15 @@ export default function Home() {
 
   function retry() {
     if (busy || !lastQuestionRef.current) return;
-    runResearch(lastQuestionRef.current);
+    runResearch(lastQuestionRef.current, lastSourcesRef.current);
+  }
+
+  function startQuickResearch(search: QuickSearch) {
+    if (busy) return;
+    const sources = [...search.sources];
+    setSelectedSources(sources);
+    setQuestion("");
+    void runResearch(search.query, sources);
   }
 
   function toggleSource(source: ResearchSource) {
@@ -293,8 +303,8 @@ export default function Home() {
 
             <motion.div className="presets" {...fadeUp(0.28)}>
               <div className="presets-head">
-                <h2>Sık kullanılan aramalar</h2>
-                <p>Bir kalıbı seçip ihtiyacınıza göre düzenleyin.</p>
+                <h2>Hazır araştırmalar</h2>
+                <p>Birini seçtiğinizde ilgili içtihat ve mevzuat birlikte aranır. Kendi sorunuzu da yazabilirsiniz.</p>
               </div>
               <div className="preset-grid">
                 {QUICK_SEARCHES.map((search, index) => (
@@ -304,16 +314,18 @@ export default function Home() {
                     initial={{ opacity: 0, y: 12 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ ...spring.glide, delay: 0.34 + index * 0.025 }}
-                    onClick={() => {
-                      setQuestion(search.query);
-                      textareaRef.current?.focus();
-                    }}
+                    onClick={() => startQuickResearch(search)}
+                    aria-label={`${search.label} için hazır araştırmayı aç`}
                     disabled={busy}
                     whileHover={reduced ? undefined : { y: -1 }}
                     whileTap={{ scale: 0.99 }}
                   >
                     <span className="preset-cat">{search.category}</span>
                     <span className="preset-label">{search.label}</span>
+                    <span className="preset-sources" aria-hidden="true">
+                      <span>İçtihat</span>
+                      <span>Mevzuat</span>
+                    </span>
                     <ArrowUpRight className="preset-arrow" />
                   </motion.button>
                 ))}
