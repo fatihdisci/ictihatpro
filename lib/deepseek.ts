@@ -44,7 +44,7 @@ export async function complete(options: CompletionOptions): Promise<DeepSeekMess
   // DeepSeek rejects a forced function selection while thinking is enabled.
   // The first research turn deliberately forces the Bedesten search; subsequent
   // turns return to automatic tool selection with thinking enabled.
-  const forcedTool = typeof options.toolChoice === "object";
+  const forcedTool = options.toolChoice != null && options.toolChoice !== "auto";
   const body: Record<string, unknown> = {
     model,
     messages: options.messages,
@@ -54,7 +54,9 @@ export async function complete(options: CompletionOptions): Promise<DeepSeekMess
   };
   if (options.tools) {
     body.tools = options.tools;
-    body.tool_choice = options.toolChoice ?? "auto";
+    // `auto` is the provider default. Omitting it preserves tool calling while
+    // avoiding DeepSeek's thinking-mode/tool_choice incompatibility.
+    if (options.toolChoice && options.toolChoice !== "auto") body.tool_choice = options.toolChoice;
   }
   if (options.json) body.response_format = { type: "json_object" };
 
