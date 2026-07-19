@@ -16,6 +16,8 @@ export const COURT_TYPES = {
   HEPSI: ["YARGITAYKARARI", "DANISTAYKARAR", "YERELHUKUK", "ISTINAFHUKUK", "KYB"],
 } as const;
 
+export type DecisionCourt = keyof typeof COURT_TYPES | "YARGITAY_ISTINAF";
+
 const HEADERS = {
   Accept: "application/json",
   AdaletApplicationName: "UyapMevzuat",
@@ -117,7 +119,7 @@ export type DecisionSummary = {
 
 export async function searchDecisions(params: {
   phrase: string;
-  court: keyof typeof COURT_TYPES;
+  court: DecisionCourt;
   chamber?: string;
   startDate?: string;
   endDate?: string;
@@ -135,7 +137,10 @@ export async function searchDecisions(params: {
   const data: Record<string, unknown> = {
     pageSize: 10,
     pageNumber: Math.min(20, Math.max(1, params.page ?? 1)),
-    itemTypeList: COURT_TYPES[params.court] ?? COURT_TYPES.YARGITAY,
+    itemTypeList:
+      params.court === "YARGITAY_ISTINAF"
+        ? [...COURT_TYPES.YARGITAY, ...COURT_TYPES.ISTINAF]
+        : COURT_TYPES[params.court] ?? COURT_TYPES.YARGITAY,
     phrase,
   };
   const chamber = resolveChamber(params.chamber);

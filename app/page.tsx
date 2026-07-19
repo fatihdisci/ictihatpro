@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-type Source = {
+type DecisionSource = {
+  kind: "decision";
   id: string;
   documentId: string;
   court: string | null;
@@ -15,6 +16,29 @@ type Source = {
   sourceUrl: string;
   evidenceComplete: boolean;
 };
+
+type LegislationSource = {
+  kind: "legislation";
+  id: string;
+  legislationId: string;
+  number: string | null;
+  name: string;
+  type: string | null;
+  series: string | null;
+  officialGazetteDate: string | null;
+  officialGazetteNumber: string | null;
+  sourceUrl: string;
+  evidenceComplete: boolean;
+};
+
+type Source = DecisionSource | LegislationSource;
+type ResearchSource = "YARGITAY" | "ISTINAF" | "MEVZUAT";
+
+const SOURCE_OPTIONS: Array<{ id: ResearchSource; label: string; shortLabel: string }> = [
+  { id: "YARGITAY", label: "Yargıtay kararları", shortLabel: "Yargıtay" },
+  { id: "ISTINAF", label: "BAM hukuk kararları", shortLabel: "İstinaf" },
+  { id: "MEVZUAT", label: "Resmî mevzuat", shortLabel: "Mevzuat" },
+];
 
 type Answer = {
   title: string;
@@ -68,6 +92,7 @@ function SourceCard({ source }: { source: Source }) {
   const [copied, setCopied] = useState(false);
 
   async function toggleText() {
+    if (source.kind !== "decision") return;
     if (open) {
       setOpen(false);
       return;
@@ -100,17 +125,30 @@ function SourceCard({ source }: { source: Source }) {
     <article className="source" id={`source-${source.id}`}>
       <div className="source-id">{source.id}</div>
       <div className="source-main">
-        <strong>{[source.court, source.chamber].filter(Boolean).join(" · ") || "Mahkeme bilgisi yok"}</strong>
-        <div className="source-meta">
-          <span>{source.esasNo ? `${source.esasNo} E.` : "Esas no doğrulanamadı"}</span>
-          <span>{source.kararNo ? `${source.kararNo} K.` : "Karar no doğrulanamadı"}</span>
-          <span>{source.date ?? "Tarih verisi doğrulanamadı"}</span>
-        </div>
-        <div className="source-foot">
-          <span>Bedesten belge no: {source.documentId}</span>
-          {!source.evidenceComplete && <span className="partial">Seçili pasajlar incelendi</span>}
-        </div>
-        {open && (
+        {source.kind === "decision" ? <>
+          <strong>{[source.court, source.chamber].filter(Boolean).join(" · ") || "Mahkeme bilgisi yok"}</strong>
+          <div className="source-meta">
+            <span>{source.esasNo ? `${source.esasNo} E.` : "Esas no doğrulanamadı"}</span>
+            <span>{source.kararNo ? `${source.kararNo} K.` : "Karar no doğrulanamadı"}</span>
+            <span>{source.date ?? "Tarih verisi doğrulanamadı"}</span>
+          </div>
+          <div className="source-foot">
+            <span>Bedesten belge no: {source.documentId}</span>
+            {!source.evidenceComplete && <span className="partial">Seçili pasajlar incelendi</span>}
+          </div>
+        </> : <>
+          <strong>{source.name}</strong>
+          <div className="source-meta">
+            <span>{source.number ? `${source.number} sayılı` : "Numara bilgisi yok"}</span>
+            <span>{source.type ?? "Mevzuat"}</span>
+            <span>{source.officialGazetteDate ?? "Resmî Gazete tarihi yok"}</span>
+          </div>
+          <div className="source-foot">
+            {source.officialGazetteNumber && <span>RG: {source.officialGazetteNumber}</span>}
+            {!source.evidenceComplete && <span className="partial">İlgili bölüm incelendi</span>}
+          </div>
+        </>}
+        {source.kind === "decision" && open && (
           <div className="decision-text" aria-live="polite">
             {decision?.status === "ready" && (
               <div className="decision-head">
@@ -129,11 +167,11 @@ function SourceCard({ source }: { source: Source }) {
         )}
       </div>
       <div className="source-actions">
-        <button className="official-link as-button" onClick={toggleText} aria-expanded={open}>
+        {source.kind === "decision" && <button className="official-link as-button" onClick={toggleText} aria-expanded={open}>
           {open ? "Metni gizle" : "Tam metin"}
-        </button>
+        </button>}
         <a href={source.sourceUrl} target="_blank" rel="noreferrer" className="official-link">
-          Resmî sistem
+          {source.kind === "decision" ? "Resmî sistem" : "Resmî metin"}
         </a>
       </div>
     </article>
@@ -199,6 +237,7 @@ export default function Home() {
   const [progressCount, setProgressCount] = useState(0);
   const [error, setError] = useState<{ message: string; isRateLimit: boolean } | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [selectedSources, setSelectedSources] = useState<ResearchSource[]>(["YARGITAY", "ISTINAF", "MEVZUAT"]);
   const endRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   const lastQuestionRef = useRef("");
@@ -290,7 +329,7 @@ export default function Home() {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: current }),
+        body: JSON.stringify({ question: current, sources: selectedSources }),
       });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -316,7 +355,7 @@ export default function Home() {
           if (event.type === "status") {
             setStatus(event.message || "Araştırılıyor");
             setDetail(event.detail || "");
-            if (event.message === "Karar metni doğrulanıyor" || event.message === "Ek karar sunucuda doğrulanıyor") {
+            if (event.message === "Karar metni doğrulanıyor" || event.message === "Ek karar sunucuda doğrulanıyor" || event.message === "Mevzuat metni açılıyor") {
               setProgressCount((count) => count + 1);
             }
           } else if (event.type === "warning") {
@@ -350,6 +389,13 @@ export default function Home() {
   function retry() {
     if (busy || !lastQuestionRef.current) return;
     runResearch(lastQuestionRef.current);
+  }
+
+  function toggleSource(source: ResearchSource) {
+    setSelectedSources((current) => {
+      if (current.includes(source)) return current.length === 1 ? current : current.filter((item) => item !== source);
+      return [...current, source];
+    });
   }
 
   if (authenticated === null) {
@@ -441,18 +487,6 @@ export default function Home() {
           </div>
         ))}
 
-        {busy && (
-          <section className="progress" aria-live="polite">
-            <div className="progress-line"><div /></div>
-            <div>
-              <strong>
-                {progressCount > 0 && <span className="progress-count">{progressCount}</span>}
-                {status || "Araştırılıyor"}
-              </strong>
-              {detail && <span>{detail}</span>}
-            </div>
-          </section>
-        )}
         {error && (
           <div className={`request-error${error.isRateLimit ? " is-rate-limit" : ""}`} role="alert">
             <strong>{error.isRateLimit ? "Çok sık istek gönderildi" : "Araştırma tamamlanamadı"}</strong>
@@ -464,9 +498,37 @@ export default function Home() {
       </div>
 
       <div className="composer-wrap" ref={composerRef}>
+        {busy && (
+          <section className="progress searching-panel" aria-live="polite">
+            <div className="progress-line"><div /></div>
+            <div>
+              <strong>
+                {progressCount > 0 && <span className="progress-count">{progressCount}</span>}
+                {status || "Araştırılıyor"}
+              </strong>
+              <span>{detail || "Seçilen kaynaklar taranıyor; bu alan araştırma boyunca görünür kalır."}</span>
+            </div>
+          </section>
+        )}
         <div className="composer">
           <div className="composer-field">
-            <label htmlFor="research-question">Yeni araştırma</label>
+            <div className="composer-label-row">
+              <label htmlFor="research-question">Yeni araştırma</label>
+              <div className="source-picker" aria-label="Aranacak kaynaklar">
+                {SOURCE_OPTIONS.map((source) => {
+                  const selected = selectedSources.includes(source.id);
+                  return <button
+                    key={source.id}
+                    type="button"
+                    className={selected ? "is-selected" : ""}
+                    onClick={() => toggleSource(source.id)}
+                    aria-pressed={selected}
+                    title={source.label}
+                    disabled={busy || (selected && selectedSources.length === 1)}
+                  >{source.shortLabel}</button>;
+                })}
+              </div>
+            </div>
             <textarea
               id="research-question"
               value={question}
@@ -483,7 +545,7 @@ export default function Home() {
               disabled={busy}
             />
           </div>
-          <button className="send" onClick={submit} disabled={busy || question.trim().length < 5} aria-label="Araştırmayı başlat">
+          <button className="send" onClick={submit} disabled={busy || question.trim().length < 5 || selectedSources.length === 0} aria-label="Araştırmayı başlat">
             <span>{busy ? "Araştırılıyor" : "Araştır"}</span><b aria-hidden="true">↗</b>
           </button>
         </div>

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { assertTrustedOrigin, clientAddress, isAuthorized } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limit";
-import { researchAndAnswer } from "@/lib/research";
+import { RESEARCH_SOURCES, researchAndAnswer } from "@/lib/research";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -9,6 +9,7 @@ export const maxDuration = 300;
 const requestSchema = z
   .object({
     question: z.string().trim().min(5).max(6000),
+    sources: z.array(z.enum(RESEARCH_SOURCES)).min(1).max(RESEARCH_SOURCES.length).default([...RESEARCH_SOURCES]),
   })
   .strict();
 
@@ -32,8 +33,11 @@ export async function POST(request: Request) {
   }
 
   let question: string;
+  let sources: z.infer<typeof requestSchema>["sources"];
   try {
-    question = requestSchema.parse(await request.json()).question;
+    const body = requestSchema.parse(await request.json());
+    question = body.question;
+    sources = body.sources;
   } catch (error) {
     const message = error instanceof z.ZodError ? "Soru 5-6000 karakter arasında olmalı" : "Geçersiz istek";
     return Response.json({ error: message }, { status: 400 });
@@ -44,7 +48,7 @@ export async function POST(request: Request) {
     async start(controller) {
       const send = (event: unknown) => controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
       try {
-        const answer = await researchAndAnswer(question, send, request.signal);
+        const answer = await researchAndAnswer(question, send, request.signal, sources);
         send({ type: "answer", answer });
         send({ type: "done" });
       } catch (error) {

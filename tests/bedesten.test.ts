@@ -69,4 +69,19 @@ describe("Bedesten arama isteği", () => {
     expect(payload.data.sortFields).toBeUndefined();
     expect(payload.data.sortDirection).toBeUndefined();
   });
+
+  it("Yargıtay ve istinaf birlikte seçildiğinde yalnızca bu iki koleksiyonu yollar", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: async () => ({ metadata: { FMTY: "SUCCESS" }, data: { total: 0, emsalKararList: [] } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await searchDecisions({ phrase: "işe iade", court: "YARGITAY_ISTINAF" });
+
+    const payload = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(payload.data.itemTypeList).toEqual(["YARGITAYKARARI", "ISTINAFHUKUK"]);
+  });
 });

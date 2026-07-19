@@ -333,10 +333,20 @@ a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visib
 .retry-button { justify-self: start; padding: 7px 14px; color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 2px; cursor: pointer; font-size: 12px; font-weight: 700; }
 .retry-button:hover { background: rgba(128, 128, 128, .12); }
 
-.composer-wrap { position: fixed; z-index: 15; right: 0; bottom: 0; left: 0; padding: 14px max(24px, calc((100vw - 980px) / 2)) max(12px, env(safe-area-inset-bottom)); background: linear-gradient(to top, var(--paper) 74%, transparent); }
+.composer-wrap { position: fixed; z-index: 15; right: 0; bottom: 0; left: 0; padding: 14px max(24px, calc((100vw - 980px) / 2)) max(12px, env(safe-area-inset-bottom)); background: linear-gradient(to top, var(--paper) 78%, transparent); }
+.searching-panel { width: min(100%, 920px); min-height: 77px; grid-template-columns: 88px 1fr; padding: 14px 16px; margin: 0 auto 10px; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--gold); box-shadow: var(--shadow-tight); }
+.searching-panel .progress-line { align-self: center; }
+.searching-panel strong { color: var(--forest); font-size: 14px; }
+.searching-panel span { margin-top: 2px; }
 .composer { display: flex; gap: 12px; align-items: stretch; padding: 10px 10px 10px 16px; background: var(--panel); border: 1px solid var(--line-strong); box-shadow: 0 18px 50px rgba(24, 42, 36, .15); }
 .composer-field { flex: 1; min-width: 0; }
+.composer-label-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .composer-field label { display: block; padding-top: 1px; color: var(--gold); font-size: 9px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+.source-picker { display: flex; gap: 4px; }
+.source-picker button { padding: 4px 7px; color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: 2px; cursor: pointer; font-size: 10px; font-weight: 700; }
+.source-picker button:hover:not(:disabled) { color: var(--forest); border-color: var(--line); }
+.source-picker button.is-selected { color: var(--forest); background: var(--gold-soft); border-color: rgba(170, 123, 54, .24); }
+.source-picker button:disabled { cursor: not-allowed; opacity: .58; }
 .composer textarea { width: 100%; min-height: 49px; max-height: 150px; padding: 4px 2px 1px; color: var(--ink); background: transparent; border: 1px solid transparent; border-radius: 2px; outline: none; resize: none; }
 .composer textarea::placeholder { color: var(--muted); }
 .send { min-width: 128px; display: flex; align-items: center; justify-content: space-between; align-self: stretch; padding: 0 15px 0 18px; color: white; background: var(--forest); border-radius: 2px; cursor: pointer; font-size: 13px; font-weight: 800; }
@@ -364,6 +374,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visib
   .source-actions { grid-column: 2; display: flex; gap: 14px; justify-items: start; }
   .decision-text { max-height: 60vh; }
   .progress { grid-template-columns: 64px 1fr; }
+  .searching-panel { grid-template-columns: 64px 1fr; }
   .composer-wrap { padding-right: 10px; padding-left: 10px; }
 }
 
@@ -383,6 +394,9 @@ a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visib
   .answer-card h2 { font-size: 35px; }
   .summary { padding: 18px; font-size: 16px; }
   .composer { gap: 7px; padding-left: 12px; }
+  .composer-label-row { align-items: flex-start; flex-direction: column; gap: 5px; }
+  .source-picker { width: 100%; }
+  .source-picker button { flex: 1; padding-right: 4px; padding-left: 4px; }
   .send { min-width: 54px; padding: 0 12px; }
   .send span { display: none; }
   .send b { font-size: 21px; }

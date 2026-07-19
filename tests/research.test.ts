@@ -245,7 +245,7 @@ describe("araştırma sentezi", () => {
       .mockResolvedValueOnce(badSynthesis);
 
     const answer = await researchAndAnswer("Kıdem tazminatı bakımından şartlar nelerdir?", vi.fn());
-    expect(answer.title).toBe("Doğrulanmış kararlar getirildi");
+    expect(answer.title).toBe("Doğrulanmış kaynaklar getirildi");
     expect(answer.sections).toEqual([]);
   });
 
@@ -261,7 +261,7 @@ describe("araştırma sentezi", () => {
 
     const answer = await researchAndAnswer("Kıdem tazminatı bakımından şartlar nelerdir?", vi.fn());
 
-    expect(answer.title).toBe("Doğrulanmış kararlar getirildi");
+    expect(answer.title).toBe("Doğrulanmış kaynaklar getirildi");
     expect(answer.sources).toHaveLength(1);
     expect(answer.limitations[0]).toContain("ayrıştırılamadığı");
   });
