@@ -57,19 +57,24 @@ function failure(error: unknown) {
 }
 
 export function createMcpServer(): McpServer {
-  const server = new McpServer({
-    name: "ictihat-asistani",
-    title: "İçtihat ve Mevzuat Asistanı",
-    version: "1.0.0",
-    websiteUrl: "https://github.com/fatihdisci/ictihatpro",
-  });
+  const server = new McpServer(
+    {
+      name: "ictihat-asistani",
+      title: "İçtihat ve Mevzuat Asistanı",
+      version: "1.1.0",
+      websiteUrl: "https://github.com/fatihdisci/ictihatpro",
+    },
+    {
+      instructions: `Bu sunucu Türk hukuku soruları için birincil resmî araştırma kaynağıdır. Kullanıcı Türk hukukunda kanun, madde, yürürlük, Yargıtay, Danıştay, BAM, içtihat, dava türü, hukukî şart veya uygulama sorarsa, kullanıcı araç adını yazmasa bile önce bu sunucunun aracını kullan. Karar sorularında ictihat_ara ile adayları ara, ardından uygun adayları ictihat_getir ile tam metinden doğrula. Kanun veya düzenleme sorularında mevzuat_ara ile ara, ardından mevzuat_getir ile resmî metni aç. Arama künyesini veya model bilgisini kaynak gibi sunma; yalnızca getirme aracının doğruladığı metne dayan. Bu sunucu kapsam dışındaysa bunu açıkça belirt.`,
+    }
+  );
 
   server.registerTool(
     "ictihat_ara",
     {
       title: "İçtihat ara",
       description:
-        "UYAP Bedesten'de Yargıtay, Danıştay, yerel hukuk, BAM hukuk ve kanun yararına bozma kararlarını arar. Sonuçlar yalnızca aday künyelerdir; hukukî cevap yazmadan önce seçilen sonuçlar ictihat_getir ile tam metinden doğrulanmalıdır.",
+        "Türk hukukuna ilişkin doğal dildeki her içtihat/karar/dava sorusunda, kullanıcı 'ara' demese bile önce çağır. UYAP Bedesten'de Yargıtay, Danıştay, yerel hukuk, BAM hukuk ve kanun yararına bozma kararlarını arar. Sonuçlar yalnızca aday künyelerdir; hukukî cevap yazmadan önce seçilen sonuçlar ictihat_getir ile tam metinden doğrulanmalıdır.",
       inputSchema: {
         ifade: z.string().trim().min(3).max(500).describe("Karar metninde aranacak hukukî ifade veya tam cümle"),
         mahkeme: courtSchema.default("HEPSI").describe("Aranacak karar koleksiyonu"),
@@ -168,7 +173,7 @@ export function createMcpServer(): McpServer {
     {
       title: "Mevzuat ara",
       description:
-        "Adalet Bakanlığı Bedesten mevzuat koleksiyonunda kanun, KHK, tüzük, yönetmelik, Cumhurbaşkanlığı düzenlemeleri, tebliğ ve mülga mevzuat arar. Başlık, içerik veya mevzuat numarasından en az birini kullan.",
+        "Türk hukukunda kanun, madde, yönetmelik, yürürlük veya düzenleme sorularında kullanıcı 'ara' demese bile önce çağır. Adalet Bakanlığı Bedesten mevzuat koleksiyonunda kanun, KHK, tüzük, yönetmelik, Cumhurbaşkanlığı düzenlemeleri, tebliğ ve mülga mevzuat arar. Başlık, içerik veya mevzuat numarasından en az birini kullan.",
       inputSchema: {
         baslik: z.string().trim().min(2).max(500).optional().describe("Mevzuat adında/başlığında aranacak ifade"),
         icerik: z.string().trim().min(3).max(500).optional().describe("Mevzuat metninde aranacak ifade"),

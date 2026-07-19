@@ -30,6 +30,7 @@ describe("MCP sunucusu", () => {
       "mevzuat_getir",
     ]);
     expect(listed.tools.every((tool) => tool.annotations?.readOnlyHint === true)).toBe(true);
+    expect(client.getInstructions()).toContain("kullanıcı araç adını yazmasa bile önce bu sunucunun aracını kullan");
     await client.close();
     await server.close();
   });

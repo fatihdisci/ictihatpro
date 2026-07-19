@@ -166,6 +166,44 @@ function sourceLabel(source: DecisionSummary): string {
     .join(", ");
 }
 
+async function verifyCandidate(
+  summary: DecisionSummary,
+  question: string,
+  evidence: Map<string, Evidence>,
+  maxSources: number,
+  maxEvidenceChars: number,
+  onProgress: (event: ProgressEvent) => void
+): Promise<unknown> {
+  if (evidence.has(summary.documentId)) return { status: "already_verified", ...evidence.get(summary.documentId) };
+  if (evidence.size >= maxSources) throw new Error(`En fazla ${maxSources} karar okunabilir`);
+
+  onProgress({ type: "status", message: "Karar metni doğrulanıyor", detail: sourceLabel(summary) });
+  let document = await readDecisionCache(summary.documentId);
+  if (!document) {
+    document = await getDecisionDocument(summary.documentId);
+    await writeDecisionCache(summary.documentId, document);
+  }
+  const verification = verifyDecisionDocument(summary, document.text);
+  if (!verification.verified) throw new Error(`Karar reddedildi: ${verification.reason}`);
+  const selected = evidenceText(document.text, question, maxEvidenceChars);
+  const id = `K${evidence.size + 1}`;
+  const item: Evidence = {
+    ...summary,
+    id,
+    sourceUrl: "https://mevzuat.adalet.gov.tr/",
+    evidenceComplete: selected.complete,
+    body: selected.text,
+  };
+  evidence.set(summary.documentId, item);
+  return {
+    id,
+    metadata: sourceLabel(summary),
+    evidenceComplete: selected.complete,
+    verifiedAgainstDocument: true,
+    text: selected.text,
+  };
+}
+
 function validateReferences(
   answer: z.infer<typeof synthesisSchema>,
   sources: Evidence[]
@@ -214,7 +252,16 @@ export async function researchAndAnswer(
   const maxEvidenceChars = Math.min(240_000, Math.max(60_000, Number(process.env.MAX_EVIDENCE_CHARS ?? "120000")));
 
   for (let turn = 0; turn < maxTurns; turn += 1) {
-    const response = await complete({ messages, tools: RESEARCH_TOOLS, maxTokens: 2500, signal });
+    const response = await complete({
+      messages,
+      tools: RESEARCH_TOOLS,
+      // A source-controlled answer cannot safely start with the model's general
+      // knowledge. Force the initial Bedesten candidate search; later turns can
+      // choose whether to refine the query or open a candidate document.
+      toolChoice: turn === 0 ? { type: "function", function: { name: "karar_ara" } } : "auto",
+      maxTokens: 2500,
+      signal,
+    });
     messages.push(response);
     if (!response.tool_calls?.length) break;
 
@@ -240,37 +287,7 @@ export async function researchAndAnswer(
           const documentId = String(args.document_id ?? "");
           const summary = candidates.get(documentId);
           if (!summary) throw new Error("Bu karar önce arama sonucunda görülmedi");
-          if (evidence.has(documentId)) {
-            result = { status: "already_verified", ...evidence.get(documentId) };
-          } else if (evidence.size >= maxSources) {
-            throw new Error(`En fazla ${maxSources} karar okunabilir`);
-          } else {
-            onProgress({ type: "status", message: "Karar metni doğrulanıyor", detail: sourceLabel(summary) });
-            let document = await readDecisionCache(documentId);
-            if (!document) {
-              document = await getDecisionDocument(documentId);
-              await writeDecisionCache(documentId, document);
-            }
-            const verification = verifyDecisionDocument(summary, document.text);
-            if (!verification.verified) throw new Error(`Karar reddedildi: ${verification.reason}`);
-            const selected = evidenceText(document.text, question, maxEvidenceChars);
-            const id = `K${evidence.size + 1}`;
-            const item: Evidence = {
-              ...summary,
-              id,
-              sourceUrl: "https://mevzuat.adalet.gov.tr/",
-              evidenceComplete: selected.complete,
-              body: selected.text,
-            };
-            evidence.set(documentId, item);
-            result = {
-              id,
-              metadata: sourceLabel(summary),
-              evidenceComplete: selected.complete,
-              verifiedAgainstDocument: true,
-              text: selected.text,
-            };
-          }
+          result = await verifyCandidate(summary, question, evidence, maxSources, maxEvidenceChars, onProgress);
         } else {
           throw new Error("Bilinmeyen araç");
         }
@@ -282,6 +299,26 @@ export async function researchAndAnswer(
         tool_call_id: call.id,
         content: JSON.stringify(result),
       });
+    }
+  }
+
+  // Some provider/model combinations finish after listing candidates without
+  // issuing the required second tool call. A candidate is not evidence, but it
+  // is safe for the server to open and verify it before giving up. This keeps a
+  // transient tool-selection miss from being presented as "no decision found".
+  if (evidence.size === 0 && candidates.size > 0) {
+    onProgress({
+      type: "warning",
+      message: "Aday karar bulundu; model metni açmadığı için sunucu doğrulama adımını tamamlıyor.",
+    });
+    for (const summary of candidates.values()) {
+      try {
+        await verifyCandidate(summary, question, evidence, maxSources, maxEvidenceChars, onProgress);
+      } catch {
+        // Search metadata can occasionally point to a malformed document. Try
+        // the next candidate; the final result still requires verification.
+      }
+      if (evidence.size > 0) break;
     }
   }
 

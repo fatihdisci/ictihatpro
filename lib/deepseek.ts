@@ -21,9 +21,15 @@ export type DeepSeekTool = {
   };
 };
 
+export type DeepSeekToolChoice =
+  | "auto"
+  | "required"
+  | { type: "function"; function: { name: string } };
+
 type CompletionOptions = {
   messages: DeepSeekMessage[];
   tools?: DeepSeekTool[];
+  toolChoice?: DeepSeekToolChoice;
   json?: boolean;
   maxTokens?: number;
   signal?: AbortSignal;
@@ -44,7 +50,7 @@ export async function complete(options: CompletionOptions): Promise<DeepSeekMess
   };
   if (options.tools) {
     body.tools = options.tools;
-    body.tool_choice = "auto";
+    body.tool_choice = options.toolChoice ?? "auto";
   }
   if (options.json) body.response_format = { type: "json_object" };
 

@@ -52,8 +52,51 @@ describe("araştırma sentezi", () => {
 
     const answer = await researchAndAnswer("Kıdem tazminatı bakımından şartlar nelerdir?", vi.fn());
 
+    expect(vi.mocked(complete).mock.calls[0][0].toolChoice).toEqual({ type: "function", function: { name: "karar_ara" } });
     expect(answer.summarySourceIds).toEqual(["K1"]);
     expect(answer.sections[0].sourceIds).toEqual(["K1"]);
     expect(answer.limitations).toContain("Bazı atıf kimlikleri model tarafından boş bırakıldı; sunucu bunları yalnızca doğrulanmış kaynaklarla tamamladı.");
+  });
+
+  it("model aday metnini açmayı atladığında doğrulanabilir ilk adayı sunucuda açar", async () => {
+    const summary = {
+      documentId: "456",
+      court: "Yargıtay Kararı",
+      chamber: "9. Hukuk Dairesi",
+      esasNo: "2023/1234",
+      kararNo: "2024/5678",
+      date: "12.03.2024",
+      finalization: null,
+    };
+    vi.mocked(searchDecisions).mockResolvedValue({ decisions: [summary] } as never);
+    vi.mocked(readDecisionCache).mockResolvedValue(null);
+    vi.mocked(getDecisionDocument).mockResolvedValue({ text: "karar metni" } as never);
+    vi.mocked(writeDecisionCache).mockResolvedValue(undefined);
+    vi.mocked(verifyDecisionDocument).mockReturnValue({ verified: true });
+    vi.mocked(complete)
+      .mockResolvedValueOnce({
+        role: "assistant",
+        tool_calls: [{ id: "search", type: "function", function: { name: "karar_ara", arguments: '{"ifade":"kıdem tazminatı"}' } }],
+      })
+      .mockResolvedValueOnce({ role: "assistant", content: "Araştırma tamamlandı." })
+      .mockResolvedValueOnce({
+        role: "assistant",
+        content: JSON.stringify({
+          title: "Sonuç",
+          summary: "Karar değerlendirmesi.",
+          summarySourceIds: ["K1"],
+          sections: [],
+          limitations: [],
+        }),
+      });
+    const progress = vi.fn();
+
+    const answer = await researchAndAnswer("Kıdem tazminatı bakımından şartlar nelerdir?", progress);
+
+    expect(answer.sources).toHaveLength(1);
+    expect(vi.mocked(getDecisionDocument)).toHaveBeenCalledWith("456");
+    expect(progress).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "warning", message: expect.stringContaining("model metni açmadığı") })
+    );
   });
 });
