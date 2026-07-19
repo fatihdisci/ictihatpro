@@ -252,13 +252,19 @@ export async function researchAndAnswer(
   const maxEvidenceChars = Math.min(240_000, Math.max(60_000, Number(process.env.MAX_EVIDENCE_CHARS ?? "120000")));
 
   for (let turn = 0; turn < maxTurns; turn += 1) {
+    const toolChoice =
+      turn === 0
+        ? { type: "function" as const, function: { name: "karar_ara" } }
+        : turn === 1 && candidates.size > 0 && evidence.size === 0
+          ? { type: "function" as const, function: { name: "karar_oku" } }
+          : "auto";
     const response = await complete({
       messages,
       tools: RESEARCH_TOOLS,
-      // A source-controlled answer cannot safely start with the model's general
-      // knowledge. Force the initial Bedesten candidate search; later turns can
-      // choose whether to refine the query or open a candidate document.
-      toolChoice: turn === 0 ? { type: "function", function: { name: "karar_ara" } } : "auto",
+      // A source-controlled answer cannot safely start with general knowledge.
+      // Once candidates are available, force a document read next rather than
+      // letting the model spend its entire turn budget on repeated searches.
+      toolChoice,
       maxTokens: 2500,
       signal,
     });
@@ -300,6 +306,7 @@ export async function researchAndAnswer(
         content: JSON.stringify(result),
       });
     }
+    if (evidence.size > 0) break;
   }
 
   // Some provider/model combinations finish after listing candidates without

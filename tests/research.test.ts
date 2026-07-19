@@ -38,7 +38,6 @@ describe("araştırma sentezi", () => {
         role: "assistant",
         tool_calls: [{ id: "read", type: "function", function: { name: "karar_oku", arguments: '{"document_id":"123"}' } }],
       })
-      .mockResolvedValueOnce({ role: "assistant", content: "Araştırma tamamlandı." })
       .mockResolvedValueOnce({
         role: "assistant",
         content: JSON.stringify({
@@ -53,6 +52,7 @@ describe("araştırma sentezi", () => {
     const answer = await researchAndAnswer("Kıdem tazminatı bakımından şartlar nelerdir?", vi.fn());
 
     expect(vi.mocked(complete).mock.calls[0][0].toolChoice).toEqual({ type: "function", function: { name: "karar_ara" } });
+    expect(vi.mocked(complete).mock.calls[1][0].toolChoice).toEqual({ type: "function", function: { name: "karar_oku" } });
     expect(answer.summarySourceIds).toEqual(["K1"]);
     expect(answer.sections[0].sourceIds).toEqual(["K1"]);
     expect(answer.limitations).toContain("Bazı atıf kimlikleri model tarafından boş bırakıldı; sunucu bunları yalnızca doğrulanmış kaynaklarla tamamladı.");
