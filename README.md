@@ -78,6 +78,8 @@ Kendi alan adınız varsa ayrıca:
 
 Vercel'de dosya sistemi kalıcı değildir. Bu nedenle yerel dosya önbelleği performans garantisi vermez; uygulama önbellek olmadan da çalışır.
 
+Uygulama varsayılan olarak en fazla 6 araştırma turunda 3 doğrulanmış karar inceler. Daha kapsamlı ama daha yavaş araştırma için isteğe bağlı olarak `MAX_RESEARCH_TURNS`, `MAX_SOURCES` ve `MAX_EVIDENCE_CHARS` ortam değişkenlerini artırabilirsiniz.
+
 ## Gizlilik
 
 - `DEEPSEEK_API_KEY` hiçbir istemci paketine eklenmez ve tarayıcıya gönderilmez.

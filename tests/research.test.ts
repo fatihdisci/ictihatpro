@@ -1,0 +1,59 @@
+import { describe, expect, it, vi } from "vitest";
+import { researchAndAnswer } from "../lib/research";
+import { complete } from "../lib/deepseek";
+import { getDecisionDocument, searchDecisions, verifyDecisionDocument } from "../lib/bedesten";
+import { readDecisionCache, writeDecisionCache } from "../lib/cache";
+
+vi.mock("../lib/deepseek", () => ({ complete: vi.fn() }));
+vi.mock("../lib/bedesten", () => ({
+  COURT_TYPES: { HEPSI: "HEPSI" },
+  searchDecisions: vi.fn(),
+  getDecisionDocument: vi.fn(),
+  verifyDecisionDocument: vi.fn(),
+}));
+vi.mock("../lib/cache", () => ({ readDecisionCache: vi.fn(), writeDecisionCache: vi.fn() }));
+
+describe("araştırma sentezi", () => {
+  it("model boş atıf dizileri döndürdüğünde yalnızca doğrulanmış kaynağı ilişkilendirir", async () => {
+    const summary = {
+      documentId: "123",
+      court: "Yargıtay Kararı",
+      chamber: "9. Hukuk Dairesi",
+      esasNo: "2023/1234",
+      kararNo: "2024/5678",
+      date: "12.03.2024",
+      finalization: null,
+    };
+    vi.mocked(searchDecisions).mockResolvedValue({ decisions: [summary] } as never);
+    vi.mocked(readDecisionCache).mockResolvedValue(null);
+    vi.mocked(getDecisionDocument).mockResolvedValue({ text: "karar metni" } as never);
+    vi.mocked(writeDecisionCache).mockResolvedValue(undefined);
+    vi.mocked(verifyDecisionDocument).mockReturnValue({ verified: true });
+    vi.mocked(complete)
+      .mockResolvedValueOnce({
+        role: "assistant",
+        tool_calls: [{ id: "search", type: "function", function: { name: "karar_ara", arguments: '{"ifade":"kıdem tazminatı"}' } }],
+      })
+      .mockResolvedValueOnce({
+        role: "assistant",
+        tool_calls: [{ id: "read", type: "function", function: { name: "karar_oku", arguments: '{"document_id":"123"}' } }],
+      })
+      .mockResolvedValueOnce({ role: "assistant", content: "Araştırma tamamlandı." })
+      .mockResolvedValueOnce({
+        role: "assistant",
+        content: JSON.stringify({
+          title: "Sonuç",
+          summary: "Karar değerlendirmesi.",
+          summarySourceIds: [],
+          sections: [{ heading: "Gerekçe", text: "Gerekçe değerlendirmesi.", sourceIds: [] }],
+          limitations: [],
+        }),
+      });
+
+    const answer = await researchAndAnswer("Kıdem tazminatı bakımından şartlar nelerdir?", vi.fn());
+
+    expect(answer.summarySourceIds).toEqual(["K1"]);
+    expect(answer.sections[0].sourceIds).toEqual(["K1"]);
+    expect(answer.limitations).toContain("Bazı atıf kimlikleri model tarafından boş bırakıldı; sunucu bunları yalnızca doğrulanmış kaynaklarla tamamladı.");
+  });
+});

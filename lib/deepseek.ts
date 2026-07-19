@@ -40,7 +40,7 @@ export async function complete(options: CompletionOptions): Promise<DeepSeekMess
     messages: options.messages,
     max_tokens: options.maxTokens ?? 5000,
     thinking: { type: "enabled" },
-    reasoning_effort: "high",
+    reasoning_effort: "medium",
   };
   if (options.tools) {
     body.tools = options.tools;
