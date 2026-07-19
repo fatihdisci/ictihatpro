@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { researchAndAnswer } from "../lib/research";
+import { decisionMatchesQuestion, researchAndAnswer } from "../lib/research";
 import { complete } from "../lib/deepseek";
 import { getDecisionDocument, searchDecisions, verifyDecisionDocument } from "../lib/bedesten";
 import { readDecisionCache, writeDecisionCache } from "../lib/cache";
@@ -14,6 +14,20 @@ vi.mock("../lib/bedesten", () => ({
 vi.mock("../lib/cache", () => ({ readDecisionCache: vi.fn(), writeDecisionCache: vi.fn() }));
 
 describe("araştırma sentezi", () => {
+  it("soru kavramlarını taşımayan doğrulanmış ama ilgisiz kararı eler", () => {
+    const unrelated = decisionMatchesQuestion(
+      "Eski Türk lirası ipoteklerinin kaldırılmasına ilişkin içtihatları bul getir",
+      "Sanığın kaçakçılık suçundan mahkumiyetine ilişkin ceza kararı."
+    );
+    const related = decisionMatchesQuestion(
+      "Eski Türk lirası ipoteklerinin kaldırılmasına ilişkin içtihatları bul getir",
+      "Tapu kaydındaki ipotek Türk Lirası üzerinden kurulmuş olup ipoteğin kaldırılması istenmiştir."
+    );
+
+    expect(unrelated.matches.length).toBeLessThan(unrelated.required);
+    expect(related.matches.length).toBeGreaterThanOrEqual(related.required);
+  });
+
   it("model boş atıf dizileri döndürdüğünde yalnızca doğrulanmış kaynağı ilişkilendirir", async () => {
     const summary = {
       documentId: "123",
@@ -26,7 +40,7 @@ describe("araştırma sentezi", () => {
     };
     vi.mocked(searchDecisions).mockResolvedValue({ decisions: [summary] } as never);
     vi.mocked(readDecisionCache).mockResolvedValue(null);
-    vi.mocked(getDecisionDocument).mockResolvedValue({ text: "karar metni" } as never);
+    vi.mocked(getDecisionDocument).mockResolvedValue({ text: "Kıdem tazminatı şartları hakkında karar metni" } as never);
     vi.mocked(writeDecisionCache).mockResolvedValue(undefined);
     vi.mocked(verifyDecisionDocument).mockReturnValue({ verified: true });
     vi.mocked(complete)
@@ -70,7 +84,7 @@ describe("araştırma sentezi", () => {
     };
     vi.mocked(searchDecisions).mockResolvedValue({ decisions: [summary] } as never);
     vi.mocked(readDecisionCache).mockResolvedValue(null);
-    vi.mocked(getDecisionDocument).mockResolvedValue({ text: "karar metni" } as never);
+    vi.mocked(getDecisionDocument).mockResolvedValue({ text: "Kıdem tazminatı şartları hakkında karar metni" } as never);
     vi.mocked(writeDecisionCache).mockResolvedValue(undefined);
     vi.mocked(verifyDecisionDocument).mockReturnValue({ verified: true });
     vi.mocked(complete)
