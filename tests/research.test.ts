@@ -223,7 +223,7 @@ describe("araştırma sentezi", () => {
     expect(answer.summary).toContain("Yargıtay 9. Hukuk Dairesi");
   });
 
-  it("kaynaklarda olmayan bir daire atfını reddeder", async () => {
+  it("kaynaklarda olmayan bir daire atfında hukukî değerlendirme üretmez", async () => {
     const badSynthesis = synthesisMessage({
       title: "Sonuç",
       summary: "Yargıtay 21. Hukuk Dairesi aksi yönde karar vermiştir.",
@@ -240,8 +240,25 @@ describe("araştırma sentezi", () => {
       .mockResolvedValueOnce(badSynthesis)
       .mockResolvedValueOnce(badSynthesis);
 
-    await expect(researchAndAnswer("Kıdem tazminatı bakımından şartlar nelerdir?", vi.fn())).rejects.toThrow(
-      "daire bilgisi"
-    );
+    const answer = await researchAndAnswer("Kıdem tazminatı bakımından şartlar nelerdir?", vi.fn());
+    expect(answer.title).toBe("Doğrulanmış kararlar getirildi");
+    expect(answer.sections).toEqual([]);
+  });
+
+  it("model iki kez bozuk JSON üretirse doğrulanmış kaynakları hata yerine güvenli geri dönüşle gösterir", async () => {
+    vi.mocked(searchDecisions).mockResolvedValue({ decisions: [decisionSummary("123")] } as never);
+    vi.mocked(getDecisionDocument).mockResolvedValue({ text: "Kıdem tazminatı şartları hakkında karar metni" } as never);
+    vi.mocked(complete)
+      .mockResolvedValueOnce(toolCallMessage("karar_ara", { ifade: "kıdem tazminatı" }))
+      .mockResolvedValueOnce(toolCallMessage("karar_oku", { document_id: "123" }))
+      .mockResolvedValueOnce({ role: "assistant", content: "Araştırma tamamlandı." })
+      .mockResolvedValueOnce({ role: "assistant", content: '{"title":"yarım' })
+      .mockResolvedValueOnce({ role: "assistant", content: '{"summary":"yine yarım' });
+
+    const answer = await researchAndAnswer("Kıdem tazminatı bakımından şartlar nelerdir?", vi.fn());
+
+    expect(answer.title).toBe("Doğrulanmış kararlar getirildi");
+    expect(answer.sources).toHaveLength(1);
+    expect(answer.limitations[0]).toContain("ayrıştırılamadığı");
   });
 });

@@ -304,6 +304,21 @@ function validateReferences(
   return answer;
 }
 
+function synthesisFallback(sources: Evidence[]): VerifiedAnswer {
+  const sourceIds = sources.map((source) => source.id);
+  return {
+    title: "Doğrulanmış kararlar getirildi",
+    summary:
+      "Karar metinleri ve künyeleri sunucuda doğrulandı; ancak özetleyici model geçerli yapılandırılmış çıktı üretemedi. Aşağıdaki doğrulanmış kaynak kartlarından tam metinleri inceleyebilirsiniz.",
+    summarySourceIds: sourceIds,
+    sections: [],
+    limitations: [
+      "Özetleyici modelin yapılandırılmış yanıtı güvenle ayrıştırılamadığı için hukukî değerlendirme üretilmedi; yalnızca doğrulanmış kaynaklar gösterildi.",
+    ],
+    sources: sources.map(({ body: _body, ...source }) => source),
+  };
+}
+
 export async function researchAndAnswer(
   question: string,
   onProgress: (event: ProgressEvent) => void,
@@ -452,7 +467,8 @@ KESİN KURALLAR:
 4. Kaynaklar çelişiyorsa açıkça belirt. Güncellik veya kapsam yetersizse limitations alanına yaz.
 5. complete=false olan kaynaklarda yalnızca gösterilen pasajlara dayan ve sınırlılığı belirt.
 6. Bu bir araştırma taslağıdır; kesin hukukî mütalaa gibi sunma.
-7. Yalnızca JSON üret. Şema:
+7. Toplam yanıtı kısa tut: özet en fazla 800, her bölüm en fazla 1.200 karakter; en fazla üç bölüm kullan.
+8. Yalnızca JSON üret. Şema:
 {"title":"...","summary":"...","summarySourceIds":["K1"],"sections":[{"heading":"...","text":"...","sourceIds":["K1"]}],"limitations":["..."]}
 
 KULLANICI SORUSU:
@@ -462,17 +478,23 @@ DOĞRULANMIŞ KAYNAKLAR:
 ${sourceBlock}`;
 
   let lastError: Error | null = null;
+  let hadModelOutput = false;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
+      const repairInstruction =
+        attempt === 0
+          ? synthesisPrompt
+          : `Önceki özet çıktısı geçerli JSON değildi. Kaynak değerlendirmesi ekleme veya değiştirme. Aşağıdaki şemaya UYAN, kısa ve geçerli bir JSON nesnesi üret; satır sonlarını JSON string içinde \\n olarak kaçır.\n\nŞEMA:\n{"title":"...","summary":"...","summarySourceIds":["K1"],"sections":[{"heading":"...","text":"...","sourceIds":["K1"]}],"limitations":["..."]}\n\nYalnızca şu kaynak kimlikleri kullanılabilir: ${sources.map((source) => source.id).join(", ")}\n\nKULLANICI SORUSU:\n${question}\n\nDOĞRULANMIŞ KAYNAKLAR:\n${sourceBlock}`;
       const response = await complete({
         messages: [
           { role: "system", content: "Sen kaynak-sınırlı bir hukuk araştırma yazıcısısın. JSON dışında çıktı verme." },
-          { role: "user", content: synthesisPrompt },
+          { role: "user", content: repairInstruction },
         ],
         json: true,
-        maxTokens: 3000,
+        maxTokens: 2200,
         signal,
       });
+      hadModelOutput = Boolean(response.content?.trim());
       const parsed = synthesisSchema.parse(JSON.parse(response.content ?? ""));
       const completed = completeMissingSourceIds(parsed, sources);
       const validated = validateReferences(completed, sources);
@@ -484,5 +506,6 @@ ${sourceBlock}`;
       lastError = error as Error;
     }
   }
+  if (hadModelOutput) return synthesisFallback(sources);
   throw new Error(`Doğrulanmış cevap oluşturulamadı: ${lastError?.message ?? "bilinmeyen hata"}`);
 }
