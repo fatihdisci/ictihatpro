@@ -1,0 +1,207 @@
+import TurndownService from "turndown";
+import { extractText } from "unpdf";
+
+const BASE = "https://bedesten.adalet.gov.tr";
+const SEARCH = "/emsal-karar/searchDocuments";
+const DOCUMENT = "/emsal-karar/getDocumentContent";
+const MIN_GAP_MS = Number(process.env.BEDESTEN_MIN_GAP_MS ?? "3500");
+
+export const COURT_TYPES = {
+  YARGITAY: ["YARGITAYKARARI"],
+  DANISTAY: ["DANISTAYKARAR"],
+  YEREL: ["YERELHUKUK"],
+  ISTINAF: ["ISTINAFHUKUK"],
+  KYB: ["KYB"],
+  HEPSI: ["YARGITAYKARARI", "DANISTAYKARAR", "YERELHUKUK", "ISTINAFHUKUK", "KYB"],
+} as const;
+
+const HEADERS = {
+  Accept: "application/json",
+  AdaletApplicationName: "UyapMevzuat",
+  "Content-Type": "application/json; charset=utf-8",
+};
+
+let requestQueue: Promise<void> = Promise.resolve();
+let lastRequestAt = 0;
+
+async function throttle(): Promise<void> {
+  const previous = requestQueue;
+  let release!: () => void;
+  requestQueue = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await previous;
+  const wait = lastRequestAt + MIN_GAP_MS - Date.now();
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+  lastRequestAt = Date.now();
+  release();
+}
+
+async function post<T>(path: string, payload: unknown): Promise<T> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await throttle();
+    const response = await fetch(BASE + path, {
+      method: "POST",
+      headers: HEADERS,
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(30_000),
+      cache: "no-store",
+    });
+    if (response.status === 429 && attempt === 0) {
+      const retryAfter = Number(response.headers.get("retry-after") ?? "10");
+      await new Promise((resolve) => setTimeout(resolve, Math.min(30, retryAfter) * 1000));
+      continue;
+    }
+    if (!response.ok) throw new Error(`Bedesten HTTP ${response.status}`);
+    const body = (await response.json()) as {
+      data?: T;
+      metadata?: { FMTY?: string; FMU?: string; FMTE?: string };
+    };
+    if (body.metadata?.FMTY && body.metadata.FMTY !== "SUCCESS") {
+      throw new Error(body.metadata.FMU ?? body.metadata.FMTE ?? "Bedesten işlem hatası");
+    }
+    if (body.data == null) throw new Error("Bedesten boş veri döndürdü");
+    return body.data;
+  }
+  throw new Error("Bedesten istek sınırı aşıldı");
+}
+
+function isoDate(value: string, end = false): string {
+  if (/^\d{4}-\d{2}-\d{2}T/.test(value)) return value;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error("Tarih YYYY-AA-GG biçiminde olmalı");
+  return `${value}T${end ? "23:59:59" : "00:00:00"}.000Z`;
+}
+
+function text(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function decisionNo(direct: unknown, year: unknown, sequence: unknown): string | null {
+  const value = text(direct);
+  if (value) return value;
+  return year && sequence ? `${year}/${sequence}` : null;
+}
+
+export function plausibleDecisionDate(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const match = value.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})/);
+  let day: number;
+  let month: number;
+  let year: number;
+  if (match) {
+    day = Number(match[1]);
+    month = Number(match[2]);
+    year = Number(match[3]);
+  } else {
+    const iso = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!iso) return null;
+    year = Number(iso[1]);
+    month = Number(iso[2]);
+    day = Number(iso[3]);
+  }
+  const maxYear = new Date().getFullYear() + 1;
+  if (year < 1900 || year > maxYear || month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return `${String(day).padStart(2, "0")}.${String(month).padStart(2, "0")}.${year}`;
+}
+
+export type DecisionSummary = {
+  documentId: string;
+  court: string | null;
+  chamber: string | null;
+  esasNo: string | null;
+  kararNo: string | null;
+  date: string | null;
+  finalization: string | null;
+};
+
+export async function searchDecisions(params: {
+  phrase: string;
+  court: keyof typeof COURT_TYPES;
+  chamber?: string;
+  startDate?: string;
+  endDate?: string;
+  page?: number;
+}): Promise<{ total: number; decisions: DecisionSummary[] }> {
+  const phrase = params.phrase.trim();
+  if (phrase.length < 3) throw new Error("Arama ifadesi en az 3 karakter olmalı");
+  const data: Record<string, unknown> = {
+    pageSize: 10,
+    pageNumber: Math.min(20, Math.max(1, params.page ?? 1)),
+    itemTypeList: COURT_TYPES[params.court] ?? COURT_TYPES.YARGITAY,
+    phrase,
+    sortFields: ["KARAR_TARIHI"],
+    sortDirection: "desc",
+  };
+  if (params.chamber) data.birimAdi = params.chamber;
+  if (params.startDate) data.kararTarihiStart = isoDate(params.startDate);
+  if (params.endDate) data.kararTarihiEnd = isoDate(params.endDate, true);
+
+  type Raw = {
+    emsalKararList?: Array<Record<string, unknown>>;
+    total?: number;
+  };
+  const result = await post<Raw>(SEARCH, {
+    data,
+    applicationName: "UyapMevzuat",
+    paging: true,
+  });
+
+  const decisions = (result.emsalKararList ?? [])
+    .map((item): DecisionSummary => ({
+      documentId: String(item.documentId ?? ""),
+      court: text((item.itemType as { description?: unknown } | undefined)?.description),
+      chamber: text(item.birimAdi),
+      esasNo: decisionNo(item.esasNo, item.esasNoYil, item.esasNoSira),
+      kararNo: decisionNo(item.kararNo, item.kararNoYil, item.kararNoSira),
+      date: plausibleDecisionDate(item.kararTarihiStr) ?? plausibleDecisionDate(item.kararTarihi),
+      finalization: text(item.kesinlesmeDurumu),
+    }))
+    .filter((item) => item.documentId.length > 0);
+  return { total: Number(result.total ?? 0), decisions };
+}
+
+export type DecisionDocument = {
+  text: string;
+  mimeType: string;
+};
+
+const turndown = new TurndownService({ headingStyle: "atx", bulletListMarker: "-" });
+turndown.remove(["script", "style", "noscript"]);
+
+export async function getDecisionDocument(documentId: string): Promise<DecisionDocument> {
+  if (!/^\d{4,20}$/.test(documentId)) throw new Error("Geçersiz documentId");
+  const result = await post<{ content?: string; mimeType?: string }>(DOCUMENT, {
+    data: { documentId },
+    applicationName: "UyapMevzuat",
+  });
+  if (!result.content) throw new Error("Karar içeriği boş");
+  const mimeType = result.mimeType ?? "application/octet-stream";
+  const bytes = Buffer.from(result.content, "base64");
+  if (mimeType.includes("html")) {
+    return { text: turndown.turndown(bytes.toString("utf8")).trim(), mimeType };
+  }
+  if (mimeType.includes("pdf")) {
+    const pdf = await extractText(new Uint8Array(bytes), { mergePages: true });
+    const extracted = Array.isArray(pdf.text) ? pdf.text.join("\n\n") : pdf.text;
+    if (!extracted?.trim()) throw new Error("PDF karar metni çıkarılamadı");
+    return { text: extracted.trim(), mimeType };
+  }
+  throw new Error(`Desteklenmeyen karar biçimi: ${mimeType}`);
+}
+
+function compactNo(value: string): string {
+  return value.replace(/\D/g, "");
+}
+
+export function verifyDecisionDocument(summary: DecisionSummary, body: string): {
+  verified: boolean;
+  reason?: string;
+} {
+  const compactBody = body.replace(/\D/g, "");
+  const required = [summary.esasNo, summary.kararNo].filter(Boolean) as string[];
+  if (required.length < 2) return { verified: false, reason: "Esas/karar numarası eksik" };
+  const missing = required.find((value) => !compactBody.includes(compactNo(value)));
+  if (missing) return { verified: false, reason: `${missing} karar metninde doğrulanamadı` };
+  if (body.trim().length < 300) return { verified: false, reason: "Karar metni olağandışı kısa" };
+  return { verified: true };
+}
