@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { getDecisionDocument, searchDecisions, verifyDecisionDocument } from "../lib/bedesten";
 import { getLegislationDocument, searchLegislation } from "../lib/mevzuat";
+import { relevantLegislationArticles } from "../lib/legal-search";
 
 const live = process.env.LIVE_BEDESTEN === "1" ? describe : describe.skip;
 
@@ -24,6 +25,24 @@ live("Bedesten canlı uyumluluk", () => {
       expect(result.documents.length).toBeGreaterThan(0);
       const document = await getLegislationDocument(result.documents[0].legislationId);
       expect(document.text.length).toBeGreaterThan(1000);
+    },
+    60_000
+  );
+
+  it(
+    "boşanma tazminatı sorgusunu Türk Medeni Kanunu 174. maddeye indirger",
+    async () => {
+      const result = await searchLegislation({
+        name: "Türk Medeni Kanunu",
+        number: "4721",
+        types: ["KANUN"],
+      });
+      const civilCode = result.documents.find((document) => document.number === "4721");
+      expect(civilCode?.name.toLocaleLowerCase("tr-TR")).toContain("medeni kanunu");
+      const document = await getLegislationDocument(civilCode!.legislationId);
+      const excerpt = relevantLegislationArticles(document.text, "boşanma AND tazminat");
+      expect(excerpt).toMatch(/MADDE\s+174/iu);
+      expect(excerpt).not.toMatch(/MADDE\s+166/iu);
     },
     60_000
   );

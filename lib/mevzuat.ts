@@ -1,9 +1,9 @@
 import TurndownService from "turndown";
 import { extractText } from "unpdf";
 import { plausibleDecisionDate } from "./bedesten";
+import { postBedesten } from "./bedesten-http";
 
 const BASE = "https://bedesten.adalet.gov.tr/mevzuat";
-const MIN_GAP_MS = Number(process.env.BEDESTEN_MIN_GAP_MS ?? "3500");
 
 export const LEGISLATION_TYPES = [
   "KANUN",
@@ -35,57 +35,13 @@ export type LegislationSummary = {
 
 export type LegislationDocument = { text: string; mimeType: string };
 
-const HEADERS = {
-  Accept: "application/json",
-  AdaletApplicationName: "UyapMevzuat",
-  "Content-Type": "application/json; charset=utf-8",
-  Origin: "https://mevzuat.adalet.gov.tr",
-  Referer: "https://mevzuat.adalet.gov.tr/",
-};
-
-let requestQueue: Promise<void> = Promise.resolve();
-let lastRequestAt = 0;
-
-async function throttle(): Promise<void> {
-  const previous = requestQueue;
-  let release!: () => void;
-  requestQueue = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  await previous;
-  const wait = lastRequestAt + MIN_GAP_MS - Date.now();
-  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-  lastRequestAt = Date.now();
-  release();
-}
-
 async function post<T>(path: string, data: Record<string, unknown>, paging = false): Promise<T> {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    await throttle();
-    const response = await fetch(`${BASE}${path}`, {
-      method: "POST",
-      headers: HEADERS,
-      body: JSON.stringify({ data, applicationName: "UyapMevzuat", ...(paging ? { paging: true } : {}) }),
-      signal: AbortSignal.timeout(30_000),
-      cache: "no-store",
-    });
-    if (response.status === 429 && attempt === 0) {
-      const retryAfter = Number(response.headers.get("retry-after") ?? "10");
-      await new Promise((resolve) => setTimeout(resolve, Math.min(30, retryAfter) * 1000));
-      continue;
-    }
-    if (!response.ok) throw new Error(`Bedesten mevzuat HTTP ${response.status}`);
-    const body = (await response.json()) as {
-      data?: T;
-      metadata?: { FMTY?: string; FMU?: string; FMTE?: string };
-    };
-    if (body.metadata?.FMTY && body.metadata.FMTY !== "SUCCESS") {
-      throw new Error(body.metadata.FMU ?? body.metadata.FMTE ?? "Bedesten mevzuat işlem hatası");
-    }
-    if (body.data == null) throw new Error("Bedesten mevzuat boş veri döndürdü");
-    return body.data;
-  }
-  throw new Error("Bedesten mevzuat istek sınırı aşıldı");
+  return postBedesten({
+    base: BASE,
+    path,
+    payload: { data, applicationName: "UyapMevzuat", ...(paging ? { paging: true } : {}) },
+    errorPrefix: "Bedesten mevzuat",
+  });
 }
 
 function value(value: unknown): string | null {
@@ -138,8 +94,6 @@ export async function searchLegislation(params: {
   const data: Record<string, unknown> = {
     pageSize: 10,
     pageNumber: Math.min(20, Math.max(1, params.page ?? 1)),
-    sortFields: ["RESMI_GAZETE_TARIHI"],
-    sortDirection: "desc",
   };
   if (params.phrase?.trim()) {
     data.phrase = params.phrase.trim();

@@ -1,11 +1,11 @@
 import TurndownService from "turndown";
 import { extractText } from "unpdf";
 import { resolveChamber } from "./chambers";
+import { postBedesten } from "./bedesten-http";
 
 const BASE = "https://bedesten.adalet.gov.tr";
 const SEARCH = "/emsal-karar/searchDocuments";
 const DOCUMENT = "/emsal-karar/getDocumentContent";
-const MIN_GAP_MS = Number(process.env.BEDESTEN_MIN_GAP_MS ?? "3500");
 
 export const COURT_TYPES = {
   YARGITAY: ["YARGITAYKARARI"],
@@ -19,55 +19,8 @@ export const COURT_TYPES = {
 export type DecisionCourt = keyof typeof COURT_TYPES | "YARGITAY_ISTINAF";
 export type DecisionCollection = (typeof COURT_TYPES)[keyof typeof COURT_TYPES][number];
 
-const HEADERS = {
-  Accept: "application/json",
-  AdaletApplicationName: "UyapMevzuat",
-  "Content-Type": "application/json; charset=utf-8",
-};
-
-let requestQueue: Promise<void> = Promise.resolve();
-let lastRequestAt = 0;
-
-async function throttle(): Promise<void> {
-  const previous = requestQueue;
-  let release!: () => void;
-  requestQueue = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  await previous;
-  const wait = lastRequestAt + MIN_GAP_MS - Date.now();
-  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-  lastRequestAt = Date.now();
-  release();
-}
-
 async function post<T>(path: string, payload: unknown): Promise<T> {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    await throttle();
-    const response = await fetch(BASE + path, {
-      method: "POST",
-      headers: HEADERS,
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(30_000),
-      cache: "no-store",
-    });
-    if (response.status === 429 && attempt === 0) {
-      const retryAfter = Number(response.headers.get("retry-after") ?? "10");
-      await new Promise((resolve) => setTimeout(resolve, Math.min(30, retryAfter) * 1000));
-      continue;
-    }
-    if (!response.ok) throw new Error(`Bedesten HTTP ${response.status}`);
-    const body = (await response.json()) as {
-      data?: T;
-      metadata?: { FMTY?: string; FMU?: string; FMTE?: string };
-    };
-    if (body.metadata?.FMTY && body.metadata.FMTY !== "SUCCESS") {
-      throw new Error(body.metadata.FMU ?? body.metadata.FMTE ?? "Bedesten işlem hatası");
-    }
-    if (body.data == null) throw new Error("Bedesten boş veri döndürdü");
-    return body.data;
-  }
-  throw new Error("Bedesten istek sınırı aşıldı");
+  return postBedesten({ base: BASE, path, payload, errorPrefix: "Bedesten" });
 }
 
 function isoDate(value: string, end = false): string {

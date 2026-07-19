@@ -1,25 +1,42 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { bedestenBooleanQuery, decisionMatchesQuestion, researchAndAnswer } from "../lib/research";
+import { legislationSolrQuery, relevantLegislationArticles } from "../lib/legal-search";
 import { complete } from "../lib/deepseek";
 import { getDecisionDocument, searchDecisions, verifyDecisionDocument } from "../lib/bedesten";
-import { readDecisionCache, writeDecisionCache } from "../lib/cache";
+import {
+  readDecisionCache,
+  readLegislationCache,
+  writeDecisionCache,
+  writeLegislationCache,
+} from "../lib/cache";
 import { getLegislationDocument, searchLegislation } from "../lib/mevzuat";
 
 vi.mock("../lib/deepseek", () => ({ complete: vi.fn() }));
 vi.mock("../lib/bedesten", () => ({
-  COURT_TYPES: { HEPSI: "HEPSI" },
   searchDecisions: vi.fn(),
   getDecisionDocument: vi.fn(),
   verifyDecisionDocument: vi.fn(),
 }));
-vi.mock("../lib/cache", () => ({ readDecisionCache: vi.fn(), writeDecisionCache: vi.fn() }));
-vi.mock("../lib/mevzuat", () => ({ searchLegislation: vi.fn(), getLegislationDocument: vi.fn() }));
+vi.mock("../lib/cache", () => ({
+  readDecisionCache: vi.fn(),
+  writeDecisionCache: vi.fn(),
+  readLegislationCache: vi.fn(),
+  writeLegislationCache: vi.fn(),
+}));
+vi.mock("../lib/mevzuat", () => ({
+  LEGISLATION_TYPES: [
+    "KANUN", "KHK", "TUZUK", "YONETMELIK", "CB_KARARNAME", "CB_KARAR",
+    "CB_YONETMELIK", "CB_GENELGE", "KKY", "UY", "TEBLIGLER", "MULGA",
+  ],
+  searchLegislation: vi.fn(),
+  getLegislationDocument: vi.fn(),
+}));
 
 function decisionSummary(documentId: string, overrides: Record<string, unknown> = {}) {
   return {
     documentId,
     court: "Yargıtay Kararı",
-    chamber: "9. Hukuk Dairesi",
+    chamber: "2. Hukuk Dairesi",
     esasNo: "2023/1234",
     kararNo: "2024/5678",
     date: "12.03.2024",
@@ -35,292 +52,198 @@ function toolCallMessage(name: string, args: Record<string, unknown>, id = name)
   };
 }
 
-function synthesisMessage(payload: Record<string, unknown>) {
-  return { role: "assistant" as const, content: JSON.stringify(payload) };
-}
+const personnel = {
+  legislationId: "personel",
+  number: "42366",
+  name: "Tarım ve Kırsal Kalkınmayı Destekleme Kurumu Personel Yönetmeliği",
+  type: "Yönetmelik",
+  series: null,
+  officialGazetteDate: "01.01.2024",
+  officialGazetteNumber: null,
+  url: null,
+};
+
+const civilCode = {
+  legislationId: "tmk",
+  number: "4721",
+  name: "Türk Medeni Kanunu",
+  type: "Kanun",
+  series: "5",
+  officialGazetteDate: "08.12.2001",
+  officialGazetteNumber: "24607",
+  url: null,
+};
+
+const civilCodeText = `MADDE 166
+Evlilik birliği temelinden sarsılmış olursa eşlerden her biri boşanma davası açabilir.
+
+MADDE 174
+Mevcut veya beklenen menfaatleri boşanma yüzünden zedelenen kusursuz veya daha az kusurlu taraf, kusurlu taraftan uygun bir maddi tazminat isteyebilir. Kişilik hakkı saldırıya uğrayan taraf manevi tazminat isteyebilir.
+
+MADDE 175
+Boşanma yüzünden yoksulluğa düşecek taraf nafaka isteyebilir.`;
 
 beforeEach(() => {
   vi.mocked(complete).mockReset();
   vi.mocked(searchDecisions).mockReset();
   vi.mocked(getDecisionDocument).mockReset();
   vi.mocked(verifyDecisionDocument).mockReset();
-  vi.mocked(readDecisionCache).mockReset();
-  vi.mocked(writeDecisionCache).mockReset();
   vi.mocked(searchLegislation).mockReset();
   vi.mocked(getLegislationDocument).mockReset();
+  vi.mocked(readDecisionCache).mockReset();
+  vi.mocked(writeDecisionCache).mockReset();
+  vi.mocked(readLegislationCache).mockReset();
+  vi.mocked(writeLegislationCache).mockReset();
+
+  vi.mocked(searchDecisions).mockResolvedValue({ total: 0, decisions: [] });
+  vi.mocked(searchLegislation).mockResolvedValue({ total: 0, documents: [] });
   vi.mocked(readDecisionCache).mockResolvedValue(null);
+  vi.mocked(readLegislationCache).mockResolvedValue(null);
   vi.mocked(writeDecisionCache).mockResolvedValue(undefined);
+  vi.mocked(writeLegislationCache).mockResolvedValue(undefined);
   vi.mocked(verifyDecisionDocument).mockReturnValue({ verified: true });
 });
 
-describe("araştırma sentezi", () => {
-  it("soru kavramlarını taşımayan doğrulanmış ama ilgisiz kararı eler", () => {
-    const unrelated = decisionMatchesQuestion(
-      "Eski Türk lirası ipoteklerinin kaldırılmasına ilişkin içtihatları bul getir",
-      "Sanığın kaçakçılık suçundan mahkumiyetine ilişkin ceza kararı."
+describe("hukukî sorgu ve madde seçimi", () => {
+  it("genel personel ifadelerini boşanma sorusu için güçlü eşleşme saymaz", () => {
+    const result = decisionMatchesQuestion(
+      "Boşanmada kusur belirlemesi ile maddi ve manevi tazminat koşulları",
+      "Personelin maddi ve manevi hakları ile çalışma koşulları kurum tarafından belirlenir."
     );
-    const related = decisionMatchesQuestion(
-      "Eski Türk lirası ipoteklerinin kaldırılmasına ilişkin içtihatları bul getir",
-      "Tapu kaydındaki ipotek Türk Lirası üzerinden kurulmuş olup ipoteğin kaldırılması istenmiştir."
-    );
-
-    expect(unrelated.matches.length).toBeLessThan(unrelated.required);
-    expect(related.matches.length).toBeGreaterThanOrEqual(related.required);
+    expect(result.matches.length).toBeLessThan(result.required);
   });
 
-  it("doğal sorguyu joker kullanmadan Bedesten Boolean aramasına dönüştürür", () => {
-    // Bedesten `*` içeren sorguyu bütünüyle reddettiği için sorguda joker olamaz.
+  it("karar ve mevzuat sorgularını Bedesten'in iki ayrı sözdizimine çevirir", () => {
     expect(bedestenBooleanQuery("eski türk lirası ipoteklerinin kaldırılması")).toBe(
       'ipoteklerinin AND kaldırılması AND "türk lirası"'
     );
-    expect(bedestenBooleanQuery('ipotek AND "türk lirası"')).toBe('ipotek AND "türk lirası"');
-    expect(bedestenBooleanQuery('ipotek* AND fek')).toBe("ipotek AND fek");
-    expect(bedestenBooleanQuery("ipotek* fekki")).toBe("ipotek AND fekki");
+    expect(bedestenBooleanQuery('ipotek* AND "türk lirası"')).toBe('ipotek AND "türk lirası"');
+    expect(legislationSolrQuery("boşanma kusur tazminat")).toBe("+tazminat +boşanma +kusur");
   });
 
-  it("kaynak kartına kararın Bedesten sayfasını işaret eden link yazar", async () => {
-    vi.mocked(searchDecisions).mockResolvedValue({ decisions: [decisionSummary("987654")] } as never);
-    vi.mocked(getDecisionDocument).mockResolvedValue({ text: "Kıdem tazminatı şartları hakkında karar metni" } as never);
-    vi.mocked(complete)
-      .mockResolvedValueOnce(toolCallMessage("karar_ara", { ifade: "kıdem tazminatı" }))
-      .mockResolvedValueOnce(toolCallMessage("karar_oku", { document_id: "987654" }))
-      .mockResolvedValueOnce({ role: "assistant", content: "Araştırma tamamlandı." })
-      .mockResolvedValueOnce(
-        toolCallMessage("dogrulanmis_cevap_yaz", {
-          title: "Sonuç",
-          summary: "Karar değerlendirmesi.",
-          summarySourceIds: ["K1"],
-          sections: [],
-          limitations: [],
-        }, "synthesis")
-      );
-
-    const answer = await researchAndAnswer("Kıdem tazminatı bakımından şartlar nelerdir?", vi.fn());
-
-    expect(answer.sources[0].sourceUrl).toBe("https://mevzuat.adalet.gov.tr/ictihat/987654");
-    expect(vi.mocked(complete).mock.calls[3][0].toolChoice).toEqual({
-      type: "function",
-      function: { name: "dogrulanmis_cevap_yaz" },
-    });
+  it("tam belgeden yalnızca aynı maddede birlikte eşleşen maddeyi çıkarır", () => {
+    const excerpt = relevantLegislationArticles(civilCodeText, "boşanma AND tazminat");
+    expect(excerpt).toContain("MADDE 174");
+    expect(excerpt).not.toContain("MADDE 166");
+    expect(excerpt).not.toContain("MADDE 175");
   });
+});
 
-  it("model istedikçe kaynak kotasına kadar birden çok kararı doğrular", async () => {
-    const first = decisionSummary("111", { esasNo: "2020/11", kararNo: "2021/22" });
-    const second = decisionSummary("222", { chamber: "12. Hukuk Dairesi", esasNo: "2019/33", kararNo: "2020/44" });
-    vi.mocked(searchDecisions).mockResolvedValue({ decisions: [first, second] } as never);
-    vi.mocked(getDecisionDocument).mockResolvedValue({ text: "Kıdem tazminatı şartları hakkında karar metni" } as never);
-    vi.mocked(complete)
-      .mockResolvedValueOnce(toolCallMessage("karar_ara", { ifade: "kıdem tazminatı" }))
-      .mockResolvedValueOnce(toolCallMessage("karar_oku", { document_id: "111" }, "read-1"))
-      .mockResolvedValueOnce(toolCallMessage("karar_oku", { document_id: "222" }, "read-2"))
-      .mockResolvedValueOnce({ role: "assistant", content: "Araştırma tamamlandı." })
-      .mockResolvedValueOnce(
-        synthesisMessage({
-          title: "Sonuç",
-          summary: "Kararların değerlendirmesi.",
-          summarySourceIds: ["K1", "K2"],
-          sections: [{ heading: "Gerekçe", text: "Ortak değerlendirme.", sourceIds: ["K1", "K2"] }],
-          limitations: [],
-        })
-      );
-
-    const answer = await researchAndAnswer("Kıdem tazminatı bakımından şartlar nelerdir?", vi.fn());
-
-    expect(answer.sources.map((source) => source.id)).toEqual(["K1", "K2"]);
-    expect(vi.mocked(getDecisionDocument).mock.calls.map(([id]) => id)).toEqual(["111", "222"]);
-  });
-
-  it("model tek kararda durursa ikinci adayı sunucu doğrular", async () => {
-    const first = decisionSummary("111", { esasNo: "2020/11", kararNo: "2021/22" });
-    const second = decisionSummary("222", { chamber: "12. Hukuk Dairesi", esasNo: "2019/33", kararNo: "2020/44" });
-    vi.mocked(searchDecisions).mockResolvedValue({ decisions: [first, second] } as never);
-    vi.mocked(getDecisionDocument).mockResolvedValue({ text: "Kıdem tazminatı şartları hakkında karar metni" } as never);
-    vi.mocked(complete)
-      .mockResolvedValueOnce(toolCallMessage("karar_ara", { ifade: "kıdem tazminatı" }))
-      .mockResolvedValueOnce(toolCallMessage("karar_oku", { document_id: "111" }))
-      .mockResolvedValueOnce({ role: "assistant", content: "Tek karar yeterli." })
-      .mockResolvedValueOnce(
-        synthesisMessage({
-          title: "Sonuç",
-          summary: "Kararların değerlendirmesi.",
-          summarySourceIds: ["K1", "K2"],
-          sections: [],
-          limitations: [],
-        })
-      );
-
-    const answer = await researchAndAnswer("Kıdem tazminatı bakımından şartlar nelerdir?", vi.fn());
-
-    expect(answer.sources).toHaveLength(2);
-    expect(vi.mocked(getDecisionDocument)).toHaveBeenCalledWith("222");
-  });
-
-  it("model boş atıf dizileri döndürdüğünde yalnızca doğrulanmış kaynağı ilişkilendirir", async () => {
-    vi.mocked(searchDecisions).mockResolvedValue({ decisions: [decisionSummary("123")] } as never);
-    vi.mocked(getDecisionDocument).mockResolvedValue({ text: "Kıdem tazminatı şartları hakkında karar metni" } as never);
-    vi.mocked(complete)
-      .mockResolvedValueOnce(toolCallMessage("karar_ara", { ifade: "kıdem tazminatı" }))
-      .mockResolvedValueOnce(toolCallMessage("karar_oku", { document_id: "123" }))
-      .mockResolvedValueOnce({ role: "assistant", content: "Araştırma tamamlandı." })
-      .mockResolvedValueOnce(
-        synthesisMessage({
-          title: "Sonuç",
-          summary: "Karar değerlendirmesi.",
-          summarySourceIds: [],
-          sections: [{ heading: "Gerekçe", text: "Gerekçe değerlendirmesi.", sourceIds: [] }],
-          limitations: [],
-        })
-      );
-
-    const answer = await researchAndAnswer("Kıdem tazminatı bakımından şartlar nelerdir?", vi.fn());
-
-    expect(vi.mocked(complete).mock.calls[0][0].toolChoice).toEqual({ type: "function", function: { name: "karar_ara" } });
-    expect(vi.mocked(complete).mock.calls[1][0].toolChoice).toEqual({ type: "function", function: { name: "karar_oku" } });
-    expect(answer.summarySourceIds).toEqual(["K1"]);
-    expect(answer.sections[0].sourceIds).toEqual(["K1"]);
-    expect(answer.limitations).toContain("Bazı atıf kimlikleri model tarafından boş bırakıldı; sunucu bunları yalnızca doğrulanmış kaynaklarla tamamladı.");
-  });
-
-  it("model aday metnini açmayı atladığında doğrulanabilir adayı sunucuda açar", async () => {
-    vi.mocked(searchDecisions).mockResolvedValue({ decisions: [decisionSummary("456")] } as never);
-    vi.mocked(getDecisionDocument).mockResolvedValue({ text: "Kıdem tazminatı şartları hakkında karar metni" } as never);
-    vi.mocked(complete)
-      .mockResolvedValueOnce(toolCallMessage("karar_ara", { ifade: "kıdem tazminatı" }))
-      .mockResolvedValueOnce({ role: "assistant", content: "Araştırma tamamlandı." })
-      .mockResolvedValueOnce(
-        synthesisMessage({
-          title: "Sonuç",
-          summary: "Karar değerlendirmesi.",
-          summarySourceIds: ["K1"],
-          sections: [],
-          limitations: [],
-        })
-      );
-    const progress = vi.fn();
-
-    const answer = await researchAndAnswer("Kıdem tazminatı bakımından şartlar nelerdir?", progress);
-
-    expect(answer.sources).toHaveLength(1);
-    expect(vi.mocked(getDecisionDocument)).toHaveBeenCalledWith("456");
-    expect(progress).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "warning", message: expect.stringContaining("model metni açmadığı") })
-    );
-  });
-
-  it("kaynaktaki daireye doğal biçimde atıf yapan cevabı kabul eder", async () => {
-    vi.mocked(searchDecisions).mockResolvedValue({ decisions: [decisionSummary("123")] } as never);
-    vi.mocked(getDecisionDocument).mockResolvedValue({ text: "Kıdem tazminatı şartları hakkında karar metni" } as never);
-    vi.mocked(complete)
-      .mockResolvedValueOnce(toolCallMessage("karar_ara", { ifade: "kıdem tazminatı" }))
-      .mockResolvedValueOnce(toolCallMessage("karar_oku", { document_id: "123" }))
-      .mockResolvedValueOnce({ role: "assistant", content: "Araştırma tamamlandı." })
-      .mockResolvedValueOnce(
-        synthesisMessage({
-          title: "Sonuç",
-          // Bedesten mahkeme adı "Yargıtay Kararı" olsa da modelin doğal
-          // "Yargıtay 9. Hukuk Dairesi" atfı reddedilmemeli.
-          summary: "Yargıtay 9. Hukuk Dairesi bu şartları aramaktadır.",
-          summarySourceIds: ["K1"],
-          sections: [],
-          limitations: [],
-        })
-      );
-
-    const answer = await researchAndAnswer("Kıdem tazminatı bakımından şartlar nelerdir?", vi.fn());
-
-    expect(answer.summary).toContain("Yargıtay 9. Hukuk Dairesi");
-  });
-
-  it("kaynaklarda olmayan bir daire atfında hukukî değerlendirme üretmez", async () => {
-    const badSynthesis = synthesisMessage({
-      title: "Sonuç",
-      summary: "Yargıtay 21. Hukuk Dairesi aksi yönde karar vermiştir.",
-      summarySourceIds: ["K1"],
-      sections: [],
-      limitations: [],
-    });
-    vi.mocked(searchDecisions).mockResolvedValue({ decisions: [decisionSummary("123")] } as never);
-    vi.mocked(getDecisionDocument).mockResolvedValue({ text: "Kıdem tazminatı şartları hakkında karar metni" } as never);
-    vi.mocked(complete)
-      .mockResolvedValueOnce(toolCallMessage("karar_ara", { ifade: "kıdem tazminatı" }))
-      .mockResolvedValueOnce(toolCallMessage("karar_oku", { document_id: "123" }))
-      .mockResolvedValueOnce({ role: "assistant", content: "Araştırma tamamlandı." })
-      .mockResolvedValueOnce(badSynthesis)
-      .mockResolvedValueOnce(badSynthesis);
-
-    const answer = await researchAndAnswer("Kıdem tazminatı bakımından şartlar nelerdir?", vi.fn());
-    expect(answer.title).toBe("Doğrulanmış kaynaklar getirildi");
-    expect(answer.sections).toEqual([]);
-  });
-
-  it("model iki kez bozuk JSON üretirse doğrulanmış kaynakları hata yerine güvenli geri dönüşle gösterir", async () => {
-    vi.mocked(searchDecisions).mockResolvedValue({ decisions: [decisionSummary("123")] } as never);
-    vi.mocked(getDecisionDocument).mockResolvedValue({ text: "Kıdem tazminatı şartları hakkında karar metni" } as never);
-    vi.mocked(complete)
-      .mockResolvedValueOnce(toolCallMessage("karar_ara", { ifade: "kıdem tazminatı" }))
-      .mockResolvedValueOnce(toolCallMessage("karar_oku", { document_id: "123" }))
-      .mockResolvedValueOnce({ role: "assistant", content: "Araştırma tamamlandı." })
-      .mockResolvedValueOnce({ role: "assistant", content: '{"title":"yarım' })
-      .mockResolvedValueOnce({ role: "assistant", content: '{"summary":"yine yarım' });
-
-    const answer = await researchAndAnswer("Kıdem tazminatı bakımından şartlar nelerdir?", vi.fn());
-
-    expect(answer.title).toBe("Doğrulanmış kaynaklar getirildi");
-    expect(answer.sources).toHaveLength(1);
-    expect(answer.limitations[0]).toContain("ayrıştırılamadığı");
-  });
-
-  it("kaynak modunda ilgisiz mevzuatı eler ve doğrudan ilgili maddeleri döndürür", async () => {
-    vi.mocked(searchLegislation).mockResolvedValue({
-      total: 2,
-      documents: [
-        {
-          legislationId: "kosgeb",
-          number: "42366",
-          name: "KOSGEB İnsan Kaynakları Yönetmeliği",
-          type: "Yönetmelik",
-          series: null,
-          officialGazetteDate: null,
-          officialGazetteNumber: null,
-          url: null,
-        },
-        {
-          legislationId: "tmk",
-          number: "4721",
-          name: "Türk Medeni Kanunu",
-          type: "Kanun",
-          series: null,
-          officialGazetteDate: "08.12.2001",
-          officialGazetteNumber: "24607",
-          url: null,
-        },
-      ],
-    });
-    vi.mocked(getLegislationDocument).mockImplementation(async (id) => ({
-      mimeType: "text/html",
-      text: id === "kosgeb"
-        ? "Personel görevde yükselme, izin ve kadro işlemleri hakkında hükümler. ".repeat(12)
-        : `MADDE 166\nEvlilik birliği, ortak hayatı sürdürmeleri kendilerinden beklenmeyecek derecede temelinden sarsılmış olursa eşlerden her biri boşanma davası açabilir.\n\nMADDE 174\nMevcut veya beklenen menfaatleri boşanma yüzünden zedelenen kusursuz veya daha az kusurlu taraf, kusurlu taraftan uygun bir maddi tazminat isteyebilir. Kişilik hakkı saldırıya uğrayan taraf manevi tazminat isteyebilir.\n\nMADDE 175\nBoşanma yüzünden yoksulluğa düşecek taraf nafaka isteyebilir.`,
-    }));
-    vi.mocked(complete)
-      .mockResolvedValueOnce(toolCallMessage("mevzuat_ara", { ifade: "boşanma kusur tazminat" }))
-      .mockResolvedValueOnce(toolCallMessage("mevzuat_oku", { mevzuat_id: "kosgeb" }))
-      .mockResolvedValueOnce({ role: "assistant", content: "Arama tamamlandı." });
+describe("tek turlu araştırma akışı", () => {
+  it("boşanma sorusunda personel yönetmeliğini indirmeden eler ve TMK 174'ü gösterir", async () => {
+    vi.mocked(searchLegislation).mockResolvedValue({ total: 2, documents: [personnel, civilCode] });
+    vi.mocked(getLegislationDocument).mockResolvedValue({ text: civilCodeText, mimeType: "text/html" });
 
     const answer = await researchAndAnswer(
-      "Boşanmada kusur belirlemesi ile maddi ve manevi tazminat koşulları nelerdir?",
+      "Boşanma davasında kusur belirlemesi ile maddi ve manevi tazminat koşulları nasıl değerlendirilir?",
       vi.fn(),
       undefined,
       ["MEVZUAT"],
       "sources"
     );
 
-    expect(answer.mode).toBe("sources");
-    expect(answer.summary).toBe("");
+    expect(searchLegislation).toHaveBeenCalledWith({
+      phrase: undefined,
+      name: "Türk Medeni Kanunu",
+      number: "4721",
+      types: ["KANUN"],
+      page: 1,
+    });
+    expect(getLegislationDocument).toHaveBeenCalledTimes(1);
+    expect(getLegislationDocument).toHaveBeenCalledWith("tmk");
     expect(answer.sources).toHaveLength(1);
-    expect(answer.sources[0]).toMatchObject({ kind: "legislation", name: "Türk Medeni Kanunu" });
+    expect(answer.sources[0]).toMatchObject({ kind: "legislation", name: "Türk Medeni Kanunu", number: "4721" });
     expect(answer.sources[0].excerpt).toContain("MADDE 174");
-    expect(answer.sources.some((source) => source.kind === "legislation" && source.name.includes("KOSGEB"))).toBe(false);
-    expect(vi.mocked(complete)).toHaveBeenCalledTimes(3);
+    expect(answer.sources[0].excerpt).not.toContain("MADDE 166");
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it("bilinmeyen konuda modeli araç döngüsü yerine yalnızca bir kez planlayıcı olarak çağırır", async () => {
+    vi.mocked(complete).mockResolvedValueOnce(
+      toolCallMessage("arama_plani_yaz", {
+        decisionQuery: "yürütmenin durdurulması AND telafisi güç zarar",
+        legislation: [{
+          phrase: "yürütmenin durdurulması",
+          name: "İdari Yargılama Usulü Kanunu",
+          number: "2577",
+          types: ["KANUN"],
+          articleQuery: "telafisi AND güç",
+        }],
+      })
+    );
+    vi.mocked(searchLegislation).mockResolvedValue({
+      total: 1,
+      documents: [{ ...civilCode, legislationId: "iyuk", number: "2577", name: "İDARİ YARGILAMA USULÜ KANUNU" }],
+    });
+    vi.mocked(getLegislationDocument).mockResolvedValue({
+      mimeType: "text/html",
+      text: "MADDE 27\nDanıştay veya idari mahkemeler, idari işlemin uygulanması hâlinde telafisi güç veya imkânsız zararların doğması ve işlemin açıkça hukuka aykırı olması şartlarının birlikte gerçekleşmesi durumunda yürütmenin durdurulmasına karar verebilir.",
+    });
+
+    const answer = await researchAndAnswer(
+      "İdari işlemin yürütmesinin durdurulması için hangi şartlar aranır?",
+      vi.fn(),
+      undefined,
+      ["MEVZUAT"],
+      "sources"
+    );
+
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(complete).mock.calls[0][0].toolChoice).toEqual({
+      type: "function",
+      function: { name: "arama_plani_yaz" },
+    });
+    expect(answer.sources[0].excerpt).toContain("MADDE 27");
+  });
+
+  it("seçilen karar koleksiyonlarında en fazla iki ilgili kararı doğrular", async () => {
+    const first = decisionSummary("1111");
+    const second = decisionSummary("2222", { chamber: "Hukuk Genel Kurulu", esasNo: "2022/12", kararNo: "2023/44" });
+    vi.mocked(searchDecisions).mockResolvedValue({ total: 2, decisions: [first, second] });
+    vi.mocked(getDecisionDocument).mockResolvedValue({
+      mimeType: "text/html",
+      text: `${"Kira tespit davasında emsal kira ve hakkaniyet indirimi değerlendirilmiştir. ".repeat(8)}`,
+    });
+
+    const answer = await researchAndAnswer(
+      "Kira tespit davasında emsal kira bedeli ve hakkaniyet indirimi nasıl belirlenir?",
+      vi.fn(),
+      undefined,
+      ["YARGITAY", "ISTINAF"],
+      "sources"
+    );
+
+    expect(searchDecisions).toHaveBeenCalledWith(expect.objectContaining({
+      phrase: '"kira tespit" AND "hakkaniyet indirimi"',
+      courtTypes: ["YARGITAYKARARI", "ISTINAFHUKUK"],
+    }));
+    expect(answer.sources).toHaveLength(2);
+    expect(answer.sources.every((source) => source.kind === "decision")).toBe(true);
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it("analiz modunda kaynak topladıktan sonra yalnızca bir sentez çağrısı yapar", async () => {
+    vi.mocked(searchLegislation).mockResolvedValue({ total: 1, documents: [civilCode] });
+    vi.mocked(getLegislationDocument).mockResolvedValue({ text: civilCodeText, mimeType: "text/html" });
+    vi.mocked(complete).mockResolvedValueOnce(
+      toolCallMessage("dogrulanmis_cevap_yaz", {
+        title: "Sonuç",
+        summary: "TMK 174 tazminat koşullarını düzenler.",
+        summarySourceIds: ["M1"],
+        sections: [],
+        limitations: [],
+      })
+    );
+
+    const answer = await researchAndAnswer(
+      "Boşanma davasında kusur ve tazminat nasıl değerlendirilir?",
+      vi.fn(),
+      undefined,
+      ["MEVZUAT"],
+      "analysis"
+    );
+
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(answer.title).toBe("Sonuç");
   });
 });

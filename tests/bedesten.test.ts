@@ -103,4 +103,21 @@ describe("Bedesten arama isteği", () => {
     const payload = JSON.parse(fetchMock.mock.calls[0][1].body as string);
     expect(payload.data.itemTypeList).toEqual(["DANISTAYKARAR", "YERELHUKUK", "KYB"]);
   });
+
+  it("aynı anda gelen özdeş Bedesten aramalarını tek ağ isteğinde birleştirir", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: async () => ({ metadata: { FMTY: "SUCCESS" }, data: { total: 0, emsalKararList: [] } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await Promise.all([
+      searchDecisions({ phrase: "muris muvazaası", court: "YARGITAY" }),
+      searchDecisions({ phrase: "muris muvazaası", court: "YARGITAY" }),
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
