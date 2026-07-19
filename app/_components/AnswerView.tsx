@@ -4,7 +4,7 @@ import { motion } from "motion/react";
 import { Markdown } from "./Markdown";
 import { SourceCard } from "./SourceCard";
 import { fadeUp, spring } from "../_lib/motion";
-import type { Answer } from "../_lib/types";
+import { SOURCE_OPTIONS, type Answer, type DecisionSource, type ResearchSource } from "../_lib/types";
 
 // Yaprağın kendi girişi: yükselerek belirir; iç öğeler ardından sırayla
 // canlanır. (Önceki clip-path "kâğıt açılışı" bazı motorlarda `round`
@@ -34,26 +34,91 @@ export function AnswerView({ answer }: { answer: Answer }) {
   const isEmpty = answer.sources.length === 0;
 
   if (answer.mode === "sources") {
+    const legislation = answer.sources.filter((source) => source.kind === "legislation");
+    const decisions = answer.sources.filter((source): source is DecisionSource => source.kind === "decision");
+    const sourceForDecision = (source: DecisionSource): ResearchSource | null => {
+      const label = `${source.court ?? ""} ${source.chamber ?? ""}`;
+      if (/yargıtay/iu.test(label)) return "YARGITAY";
+      if (/istinaf|bölge\s+adliye/iu.test(label)) return "ISTINAF";
+      if (/danıştay/iu.test(label)) return "DANISTAY";
+      if (/kanun\s+yararına|kyb/iu.test(label)) return "KYB";
+      if (/yerel|hukuk\s+mahkemesi/iu.test(label)) return "YEREL";
+      return null;
+    };
+    const searched = answer.searchedSources ?? [];
+    const countFor = (source: ResearchSource) =>
+      source === "MEVZUAT"
+        ? legislation.length
+        : decisions.filter((decision) => sourceForDecision(decision) === source).length;
+
     return (
-      <motion.article className={`sheet${isEmpty ? " sheet-empty" : ""}`} {...sheetEnter}>
-        <motion.div className="sources-head" {...fadeUp(0.12)} style={{ borderBottom: 0, paddingBottom: 0 }}>
+      <motion.article className={`sheet result-sheet${isEmpty ? " sheet-empty" : ""}`} {...sheetEnter}>
+        <motion.header className="result-head" {...fadeUp(0.12)}>
           <div>
             <span className="eyebrow">Arama sonucu</span>
-            <h3 style={{ marginTop: "0.25rem" }}>Bulunan kaynaklar</h3>
+            <h2>Kaynaklar</h2>
           </div>
-          <span className="meta muted">{answer.sources.length} kaynak</span>
-        </motion.div>
+          <div className="result-totals" aria-label="Sonuç sayıları">
+            <span><strong>{decisions.length}</strong> karar</span>
+            <span><strong>{legislation.length}</strong> mevzuat</span>
+          </div>
+        </motion.header>
+
+        {searched.length > 0 && (
+          <motion.div className="coverage" {...fadeUp(0.16)} aria-label="Aranan kaynaklar">
+            {SOURCE_OPTIONS.filter((option) => searched.includes(option.id)).map((option) => {
+              const count = countFor(option.id);
+              return (
+                <span className={`coverage-item${count === 0 ? " coverage-empty" : ""}`} key={option.id}>
+                  {option.shortLabel}
+                  <strong>{count}</strong>
+                </span>
+              );
+            })}
+          </motion.div>
+        )}
+
         {isEmpty ? (
           <motion.p className="muted" {...fadeUp(0.18)} style={{ marginTop: "1rem" }}>
             Seçilen kapsamda ilgili bir kaynak bulunamadı.
           </motion.p>
         ) : (
-          <div className="source-list" style={{ marginTop: "1rem" }}>
-            {answer.sources.map((source, index) => (
-              <motion.div key={`${source.kind}-${source.id}`} {...fadeUp(0.18 + index * 0.05, 12)}>
-                <SourceCard source={source} />
-              </motion.div>
-            ))}
+          <div className="result-groups">
+            {searched.includes("MEVZUAT") && legislation.length === 0 && (
+              <motion.p className="result-missing" {...fadeUp(0.2)}>
+                Mevzuatta doğrulanmış bir madde eşleşmesi bulunamadı.
+              </motion.p>
+            )}
+            {legislation.length > 0 && (
+              <section className="result-group result-group-legislation">
+                <div className="result-group-head">
+                  <h3>İlgili mevzuat</h3>
+                  <span className="meta muted">{legislation.length} metin</span>
+                </div>
+                <div className="source-list">
+                  {legislation.map((source, index) => (
+                    <motion.div key={`${source.kind}-${source.id}`} {...fadeUp(0.2 + index * 0.04, 10)}>
+                      <SourceCard source={source} />
+                    </motion.div>
+                  ))}
+                </div>
+              </section>
+            )}
+            {decisions.length > 0 && (
+              <section className="result-group">
+                <div className="result-group-head">
+                  <h3>İlgili kararlar</h3>
+                  <span className="meta muted">{decisions.length} karar</span>
+                </div>
+                <div className="source-list">
+                  {decisions.map((source, index) => (
+                    <motion.div key={`${source.kind}-${source.id}`} {...fadeUp(0.24 + index * 0.04, 10)}>
+                      <SourceCard source={source} />
+                    </motion.div>
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
         )}
       </motion.article>

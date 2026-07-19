@@ -46,4 +46,21 @@ live("Bedesten canlı uyumluluk", () => {
     },
     60_000
   );
+
+  it(
+    "konut ihtiyacı sorgusunu Türk Borçlar Kanunu'nun ilgili tahliye maddelerine indirger",
+    async () => {
+      const result = await searchLegislation({
+        name: "Türk Borçlar Kanunu",
+        number: "6098",
+        types: ["KANUN"],
+      });
+      const obligationsCode = result.documents.find((document) => document.number === "6098");
+      expect(obligationsCode?.name.toLocaleLowerCase("tr-TR")).toContain("borçlar kanunu");
+      const document = await getLegislationDocument(obligationsCode!.legislationId);
+      const excerpt = relevantLegislationArticles(document.text, "gereksinimi AND sona");
+      expect(excerpt).toMatch(/MADDE\s+350/iu);
+    },
+    60_000
+  );
 });

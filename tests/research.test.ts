@@ -85,6 +85,23 @@ Mevcut veya beklenen menfaatleri boşanma yüzünden zedelenen kusursuz veya dah
 MADDE 175
 Boşanma yüzünden yoksulluğa düşecek taraf nafaka isteyebilir.`;
 
+const obligationsCode = {
+  legislationId: "tbk",
+  number: "6098",
+  name: "Türk Borçlar Kanunu",
+  type: "Kanun",
+  series: "5",
+  officialGazetteDate: "04.02.2011",
+  officialGazetteNumber: "27836",
+  url: null,
+};
+
+const obligationsCodeText = `MADDE 350
+Kiraya veren, kira sözleşmesini; kiralananı kendisi, eşi, altsoyu, üstsoyu veya kanun gereği bakmakla yükümlü olduğu diğer kişiler için konut ya da işyeri gereksinimi sebebiyle kullanma zorunluluğu varsa belirli süreli sözleşmelerde sürenin sonunda açacağı dava ile sona erdirebilir.
+
+MADDE 351
+Kiralananı sonradan edinen kişi, kendisi veya kanunda sayılan yakınları için konut ya da işyeri gereksinimi sebebiyle kullanma zorunluluğu varsa sözleşmeyi dava yoluyla sona erdirebilir.`;
+
 const originalSemanticCandidates = process.env.SEMANTIC_CANDIDATES;
 
 afterEach(() => {
@@ -144,6 +161,45 @@ describe("hukukî sorgu ve madde seçimi", () => {
 });
 
 describe("tek turlu araştırma akışı", () => {
+  it("ihtiyacı biçimini tahliye rotasına bağlar, TBK 350'yi ve yalnızca ilgili kararı getirir", async () => {
+    const unrelated = decisionSummary("1111", {
+      court: "İstinaf Hukuk Kararı",
+      chamber: "8. Hukuk Dairesi",
+    });
+    const relevant = decisionSummary("2222", {
+      chamber: "3. Hukuk Dairesi",
+      esasNo: "2017/7019",
+      kararNo: "2017/17123",
+    });
+    vi.mocked(searchDecisions).mockResolvedValue({ total: 2, decisions: [unrelated, relevant] });
+    vi.mocked(getDecisionDocument)
+      .mockResolvedValueOnce({ mimeType: "text/html", text: "Trafik kazası sonrası bakıcı ihtiyacı ve bedensel zarar. ".repeat(20) })
+      .mockResolvedValueOnce({ mimeType: "text/html", text: "Konut ihtiyacı nedeniyle tahliye için ihtiyacın gerçek, samimi ve zorunlu olması gerekir. ".repeat(20) });
+    vi.mocked(semanticRerank).mockResolvedValue({
+      provider: "deepseek-rerank",
+      results: [{ id: "1111", score: 0.98 }, { id: "2222", score: 0.91 }],
+    });
+    vi.mocked(searchLegislation).mockResolvedValue({ total: 1, documents: [obligationsCode] });
+    vi.mocked(getLegislationDocument).mockResolvedValue({ text: obligationsCodeText, mimeType: "text/html" });
+
+    const answer = await researchAndAnswer(
+      "Konut ihtiyacı nedeniyle tahliye davasının şartları ve ispatı nasıl değerlendirilir?",
+      vi.fn(),
+      undefined,
+      ["YARGITAY", "ISTINAF", "YEREL", "MEVZUAT"],
+      "sources"
+    );
+
+    expect(searchDecisions).toHaveBeenCalledWith(expect.objectContaining({ phrase: '"ihtiyaç nedeniyle tahliye"' }));
+    expect(searchLegislation).toHaveBeenCalledWith(expect.objectContaining({ name: "Türk Borçlar Kanunu", number: "6098" }));
+    expect(answer.sources).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "legislation", number: "6098", excerpt: expect.stringContaining("MADDE 350") }),
+      expect.objectContaining({ kind: "decision", documentId: "2222" }),
+    ]));
+    expect(answer.sources).not.toEqual(expect.arrayContaining([expect.objectContaining({ documentId: "1111" })]));
+    expect(answer.searchedSources).toEqual(["YARGITAY", "ISTINAF", "YEREL", "MEVZUAT"]);
+  });
+
   it("boşanma sorusunda personel yönetmeliğini indirmeden eler ve TMK 174'ü gösterir", async () => {
     vi.mocked(searchLegislation).mockResolvedValue({ total: 2, documents: [personnel, civilCode] });
     vi.mocked(getLegislationDocument).mockResolvedValue({ text: civilCodeText, mimeType: "text/html" });

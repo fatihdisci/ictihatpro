@@ -59,6 +59,7 @@ export type VerifiedAnswer = {
   sections: Array<{ heading: string; text: string; sourceIds: string[] }>;
   limitations: string[];
   sources: VerifiedSource[];
+  searchedSources?: ResearchSource[];
 };
 
 export type ProgressEvent =
@@ -149,7 +150,9 @@ const KNOWN_ROUTES: KnownRoute[] = [
     legislation: [{ phrase: "kira bedeli", name: "Türk Borçlar Kanunu", number: "6098", types: ["KANUN"], articleQuery: '"kira bedeli"' }],
   },
   {
-    test: /ihtiyaç.*tahliye|tahliye.*ihtiyaç/iu,
+    // "ihtiyaç" sözcüğü iyelik eki aldığında "ihtiyacı" olur. İki yazımı
+    // da kapsamazsak hazır aramadaki doğal cümle genel planlayıcıya düşer.
+    test: /(?:ihtiya[çc]|gereksinim).{0,80}tahliye|tahliye.{0,80}(?:ihtiya[çc]|gereksinim)/iu,
     decisionQuery: '"ihtiyaç nedeniyle tahliye"',
     legislation: [{ phrase: "konut gereksinimi", name: "Türk Borçlar Kanunu", number: "6098", types: ["KANUN"], articleQuery: "gereksinimi AND sona" }],
   },
@@ -628,7 +631,10 @@ export async function researchAndAnswer(
   const legislationCandidates = new Map<string, { summary: LegislationSummary; plan: LegislationPlan; score: number }>();
   const evidence = new Map<string, Evidence>();
   let rateLimitError: BedestenRateLimitError | null = null;
-  const maxSources = Math.min(6, Math.max(1, Number(process.env.MAX_SOURCES ?? "3")));
+  // Mevzuatla birlikte yalnızca iki karar göstermek seçilen mahkeme
+  // kapsamını gereksiz yere daraltıyordu. Aday indirme sayısı değişmeden,
+  // doğrulanan sonuçların altıya kadar gösterilmesine izin veriyoruz.
+  const maxSources = Math.min(8, Math.max(1, Number(process.env.MAX_SOURCES ?? "6")));
   const maxEvidenceChars = Math.min(240_000, Math.max(60_000, Number(process.env.MAX_EVIDENCE_CHARS ?? "120000")));
   const configuredSemanticCandidates = Number(process.env.SEMANTIC_CANDIDATES ?? "10");
   const semanticCandidateLimit = Math.min(
@@ -745,7 +751,7 @@ export async function researchAndAnswer(
     }
   }
 
-  const decisionTarget = searchesDecisions ? Math.min(2, maxSources - evidence.size) : 0;
+  const decisionTarget = searchesDecisions ? Math.max(0, maxSources - evidence.size) : 0;
   const loadedDecisions: LoadedDecision[] = [];
   let decisionAttempts = 0;
   for (const summary of candidates.values()) {
@@ -796,6 +802,10 @@ export async function researchAndAnswer(
         .filter((result) => result.score >= minimumScore)
         .map((result) => byId.get(result.id))
         .filter((item): item is LoadedDecision => Boolean(item))
+        // Anlamsal puan tek başına yeterli değildir. Karar, arama planındaki
+        // ayırt edici hukukî kavramları da taşımalı; örneğin yalnızca
+        // "bakıcı ihtiyacı" geçen bir tazminat kararı tahliye sonucu olamaz.
+        .filter((item) => item.lexicalMatches.length >= item.lexicalRequired)
         .slice(0, decisionTarget);
     } catch (error) {
       onProgress({
@@ -822,6 +832,7 @@ export async function researchAndAnswer(
       sections: [],
       limitations: ["Arama ifadelerini veya mahkeme/daire kapsamını değiştirerek yeniden deneyebilirsiniz."],
       sources: [],
+      searchedSources: selected,
     };
   }
 
@@ -834,6 +845,7 @@ export async function researchAndAnswer(
       sections: [],
       limitations: [],
       sources: sources.map(({ body: _body, ...source }) => source),
+      searchedSources: selected,
     };
   }
 
@@ -913,11 +925,12 @@ ${sourceBlock}`;
       return {
         ...validated,
         sources: sources.map(({ body: _body, ...source }) => source),
+        searchedSources: selected,
       };
     } catch (error) {
       lastError = error as Error;
     }
   }
-  if (hadModelOutput) return synthesisFallback(sources);
+  if (hadModelOutput) return { ...synthesisFallback(sources), searchedSources: selected };
   throw new Error(`Doğrulanmış cevap oluşturulamadı: ${lastError?.message ?? "bilinmeyen hata"}`);
 }

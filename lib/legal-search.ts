@@ -2,7 +2,8 @@ const GENERIC_TERMS = new Set([
   "ve", "veya", "ile", "için", "bir", "bu", "şu", "olan", "olarak", "nedir", "nasıl", "eski", "türk",
   "ilişkin", "içtihat", "içtihatları", "karar", "kararları", "bul", "getir", "göster", "hakkında", "dair",
   "dava", "davası", "davada", "şart", "şartları", "koşul", "koşulları", "belirleme", "belirlemesi", "değerlendirilir",
-  "hangi", "bakımından", "uygun", "ilgili", "yapılır", "edilir", "istenir", "gerekir", "maddi", "manevi",
+  "davasının", "nedeni", "nedeniyle", "ispat", "ispatı", "hangi", "bakımından", "uygun", "ilgili", "yapılır",
+  "edilir", "istenir", "gerekir", "maddi", "manevi",
 ]);
 
 function genericTerm(term: string): boolean {
@@ -11,6 +12,10 @@ function genericTerm(term: string): boolean {
 
 function termForms(term: string): string[] {
   const forms = new Set([term]);
+  // Türkçede ek alırken görülen ünsüz yumuşamasını da arama kökü say:
+  // ihtiyaç → ihtiyacı, hukuk → hukuka gibi biçimler aksi hâlde kaçıyordu.
+  const softened = { p: "b", ç: "c", t: "d", k: "ğ" }[term.at(-1) ?? ""];
+  if (softened && term.length >= 5) forms.add(`${term.slice(0, -1)}${softened}`);
   let current = term;
   const suffixes = [
     "lerinin", "larının", "lerden", "lardan", "lerin", "ların", "sından", "sinden", "sına", "sine",

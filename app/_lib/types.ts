@@ -39,6 +39,7 @@ export type Answer = {
   sections: Array<{ heading: string; text: string; sourceIds: string[] }>;
   limitations: string[];
   sources: Source[];
+  searchedSources?: ResearchSource[];
 };
 
 export type Research = { question: string; answer: Answer };

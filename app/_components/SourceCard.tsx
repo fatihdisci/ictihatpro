@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useRef, useState } from "react";
+import { motion } from "motion/react";
 import { Markdown } from "./Markdown";
 import { Check, Chevron, Copy, Document, External } from "./Icons";
 import { spring } from "../_lib/motion";
@@ -13,17 +13,22 @@ type DecisionText =
   | { status: "ready"; text: string; mimeType: string };
 
 export function SourceCard({ source }: { source: Source }) {
-  const [open, setOpen] = useState(false);
+  const [documentOpen, setDocumentOpen] = useState(false);
+  const [excerptOpen, setExcerptOpen] = useState(false);
   const [decision, setDecision] = useState<DecisionText | null>(null);
   const [copied, setCopied] = useState(false);
+  const dialogRef = useRef<HTMLDialogElement>(null);
 
-  async function toggleText() {
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog || source.kind !== "decision") return;
+    if (documentOpen && !dialog.open) dialog.showModal();
+    if (!documentOpen && dialog.open) dialog.close();
+  }, [documentOpen, source.kind]);
+
+  async function openDocument() {
     if (source.kind !== "decision") return;
-    if (open) {
-      setOpen(false);
-      return;
-    }
-    setOpen(true);
+    setDocumentOpen(true);
     if (decision?.status === "ready" || decision?.status === "loading") return;
     setDecision({ status: "loading" });
     try {
@@ -43,105 +48,119 @@ export function SourceCard({ source }: { source: Source }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Pano izni yoksa sessizce geç; düğme metni değişmeyerek zaten geri bildirim verir.
+      // Pano izni yoksa düğme değişmeden kalır.
     }
   }
 
+  const excerptCanCollapse = source.excerpt.length > 720;
+
   return (
-    <motion.article className="source" id={`source-${source.id}`} layout="position" transition={spring.soft}>
-      <div className="source-grid">
-        <div style={{ minWidth: 0 }}>
-          {source.kind === "decision" ? (
-            <>
-              <div className="source-title">
-                <span className="source-tag">{source.id}</span>
-                <strong>{[source.court, source.chamber].filter(Boolean).join(" · ") || "Mahkeme bilgisi yok"}</strong>
-              </div>
-              <div className="source-meta meta">
-                <span>{source.esasNo ? `${source.esasNo} E.` : "Esas no doğrulanamadı"}</span>
-                <span>{source.kararNo ? `${source.kararNo} K.` : "Karar no doğrulanamadı"}</span>
-                <span>{source.date ?? "Tarih doğrulanamadı"}</span>
-              </div>
-              <div className="source-foot">
-                <span className="meta">Bedesten {source.documentId}</span>
+    <>
+      <motion.article
+        className={`source source-${source.kind}`}
+        id={`source-${source.id}`}
+        layout="position"
+        transition={spring.soft}
+      >
+        <div className="source-grid">
+          <div className="source-heading">
+            <span className="source-kind">{source.kind === "decision" ? "Karar" : "Mevzuat"}</span>
+            {source.kind === "decision" ? (
+              <>
+                <h4>{[source.court, source.chamber].filter(Boolean).join(" · ") || "Mahkeme bilgisi yok"}</h4>
+                <div className="source-meta meta">
+                  <span>{source.esasNo ? `${source.esasNo} E.` : "Esas no doğrulanamadı"}</span>
+                  <span>{source.kararNo ? `${source.kararNo} K.` : "Karar no doğrulanamadı"}</span>
+                  <span>{source.date ?? "Tarih doğrulanamadı"}</span>
+                </div>
                 {!source.evidenceComplete && <span className="flag-partial">Seçili pasajlar incelendi</span>}
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="source-title">
-                <span className="source-tag">{source.id}</span>
-                <strong>{source.name}</strong>
-              </div>
-              <div className="source-meta meta">
-                <span>{source.number ? `${source.number} sayılı` : "Numara bilgisi yok"}</span>
-                <span>{source.type ?? "Mevzuat"}</span>
-                <span>{source.officialGazetteDate ?? "RG tarihi yok"}</span>
-              </div>
-              <div className="source-foot">
-                {source.officialGazetteNumber && <span className="meta">RG {source.officialGazetteNumber}</span>}
-                {!source.evidenceComplete && <span className="flag-partial">İlgili bölüm incelendi</span>}
-              </div>
-            </>
-          )}
+              </>
+            ) : (
+              <>
+                <h4>{source.name}</h4>
+                <div className="source-meta meta">
+                  <span>{source.number ? `${source.number} sayılı` : "Numara bilgisi yok"}</span>
+                  <span>{source.type ?? "Mevzuat"}</span>
+                  {source.officialGazetteDate && <span>RG {source.officialGazetteDate}</span>}
+                  {source.officialGazetteNumber && <span>Sayı {source.officialGazetteNumber}</span>}
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="source-actions">
+            {source.kind === "decision" && (
+              <button className="act" onClick={openDocument} aria-haspopup="dialog">
+                <Document />
+                Tam metin
+              </button>
+            )}
+            <a href={source.sourceUrl} target="_blank" rel="noreferrer" className="act">
+              <External />
+              {source.kind === "decision" ? "Resmî kayıt" : "Resmî metin"}
+            </a>
+          </div>
         </div>
 
-        <div className="source-actions">
-          {source.kind === "decision" && (
-            <button className="act" onClick={toggleText} aria-expanded={open} aria-controls={`fulltext-${source.id}`}>
-              <Document />
-              {open ? "Metni gizle" : "Tam metin"}
-              <motion.span
-                animate={{ rotate: open ? 180 : 0 }}
-                transition={spring.snap}
-                style={{ display: "grid", placeItems: "center" }}
-              >
+        <div className={`excerpt${excerptCanCollapse ? " excerpt-collapsible" : ""}${excerptOpen ? " excerpt-open" : ""}`}>
+          <span className="excerpt-label">{source.kind === "legislation" ? "İlgili madde" : "İlgili bölüm"}</span>
+          <div className="excerpt-body">
+            <Markdown>{source.excerpt}</Markdown>
+          </div>
+          {excerptCanCollapse && (
+            <button className="excerpt-toggle" onClick={() => setExcerptOpen((value) => !value)} aria-expanded={excerptOpen}>
+              {excerptOpen ? "Daha az göster" : "Bölümün devamı"}
+              <motion.span animate={{ rotate: excerptOpen ? 180 : 0 }} transition={spring.snap}>
                 <Chevron size={13} />
               </motion.span>
             </button>
           )}
-          <a href={source.sourceUrl} target="_blank" rel="noreferrer" className="act">
-            <External />
-            {source.kind === "decision" ? "Resmî sistem" : "Resmî metin"}
-          </a>
         </div>
-      </div>
+      </motion.article>
 
-      <div className="excerpt">
-        <span className="excerpt-label">İlgili bölüm</span>
-        <Markdown>{source.excerpt}</Markdown>
-      </div>
-
-      {/* Yükseklik yaydan geçerek açılır; içerik kutuyu itmez, kutu içeriğe
-          uyar. `hidden` sırasında overflow kesilir ki metin dışarı taşmasın. */}
-      <AnimatePresence initial={false}>
-        {source.kind === "decision" && open && (
-          <motion.div
-            key="fulltext"
-            id={`fulltext-${source.id}`}
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ height: spring.soft, opacity: { duration: 0.18 } }}
-            style={{ overflow: "hidden" }}
-          >
-            <div className="fulltext" aria-live="polite" style={{ marginTop: "0.75rem" }}>
-              {decision?.status === "ready" && (
-                <div className="fulltext-bar">
-                  <button className="act" onClick={copyText}>
-                    {copied ? <Check /> : <Copy />}
-                    {copied ? "Kopyalandı" : "Metni kopyala"}
-                  </button>
-                </div>
-              )}
-              {(!decision || decision.status === "loading") && <p className="muted">Karar metni yükleniyor…</p>}
-              {decision?.status === "error" && <p className="error-text">{decision.message}</p>}
-              {decision?.status === "ready" &&
-                (decision.mimeType.includes("pdf") ? <pre>{decision.text}</pre> : <Markdown>{decision.text}</Markdown>)}
+      {source.kind === "decision" && (
+        <dialog
+          ref={dialogRef}
+          className="document-dialog"
+          aria-labelledby={`document-title-${source.id}`}
+          onClose={() => setDocumentOpen(false)}
+          onCancel={() => setDocumentOpen(false)}
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setDocumentOpen(false);
+          }}
+        >
+          <div className="document-dialog-head">
+            <div>
+              <span className="source-kind">Karar metni</span>
+              <h3 id={`document-title-${source.id}`}>
+                {[source.court, source.chamber].filter(Boolean).join(" · ") || "Karar"}
+              </h3>
+              <p className="meta">
+                {[source.esasNo && `${source.esasNo} E.`, source.kararNo && `${source.kararNo} K.`, source.date]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.article>
+            <button className="dialog-close" onClick={() => setDocumentOpen(false)} aria-label="Karar metnini kapat">
+              Kapat
+            </button>
+          </div>
+          <div className="document-dialog-body" aria-live="polite">
+            {decision?.status === "ready" && (
+              <div className="fulltext-bar">
+                <button className="act" onClick={copyText}>
+                  {copied ? <Check /> : <Copy />}
+                  {copied ? "Kopyalandı" : "Metni kopyala"}
+                </button>
+              </div>
+            )}
+            {(!decision || decision.status === "loading") && <p className="muted">Karar metni yükleniyor…</p>}
+            {decision?.status === "error" && <p className="error-text">{decision.message}</p>}
+            {decision?.status === "ready" &&
+              (decision.mimeType.includes("pdf") ? <pre>{decision.text}</pre> : <Markdown>{decision.text}</Markdown>)}
+          </div>
+        </dialog>
+      )}
+    </>
   );
 }
