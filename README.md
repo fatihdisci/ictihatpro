@@ -93,7 +93,36 @@ Kendi alan adınız varsa ayrıca:
 
 - `TRUSTED_ORIGIN=https://ictihat.sizinalanadiniz.com`
 
-Vercel'de dosya sistemi kalıcı değildir. Bu nedenle yerel dosya önbelleği performans garantisi vermez; uygulama önbellek olmadan da çalışır.
+### Paylaşılan durum (Upstash) — Vercel'de önerilir
+
+Sunucusuz ortamda her lambda örneği kendi belleğine sahiptir. Bu yüzden süreç
+içi istek sayaçları ve önbellek örnekler arasında paylaşılmaz: "saatlik 60
+istek" sınırı fiilen `60 × örnek sayısı` olur ve Bedesten'in ölçülen
+30 saniyede 10 istek kotası aşılarak 429 alınır.
+
+Vercel projesine Upstash Redis entegrasyonunu eklemek bu üç şeyi paylaşılır
+hâle getirir: istek sınırları, Bedesten kotası ve indirilen belge önbelleği.
+
+- `UPSTASH_REDIS_REST_URL`
+- `UPSTASH_REDIS_REST_TOKEN`
+
+Bu değişkenler tanımlı değilse uygulama süreç-içi belleğe düşer ve eskisi gibi
+çalışır; tek süreçli self-host kurulumunda doğru davranış budur. Upstash'e
+ulaşılamazsa istek engellenmez, yerel sayaca geri dönülür.
+
+Bedesten paylaşılan kotası `BEDESTEN_SHARED_LIMIT` (varsayılan 8) ve
+`BEDESTEN_SHARED_WINDOW_S` (varsayılan 30) ile ayarlanır.
+
+### Bölge ve sağlık kontrolü
+
+`vercel.json` dağıtımı `fra1` (Frankfurt) bölgesine sabitler. Bedesten
+Türkiye'dedir ve bir araştırma turu çok sayıda sıralı istek yaptığı için
+varsayılan ABD bölgesi belirgin gecikme ekler.
+
+Aynı dosya `/api/health` ucunu günde bir kez çalıştıran bir cron tanımlar. Bu
+uç Bedesten'in karar araması, mevzuat araması ve madde ağacı sözleşmesini
+doğrular; şema değişirse 503 döner ve ayrıntı loglanır. `CRON_SECRET`
+tanımlanırsa uç yalnızca `Authorization: Bearer <değer>` başlığıyla çağrılabilir.
 
 Uygulama varsayılan olarak 20 aday kararın tam metnini doğrular; anlamsal ve kelime temelli elemeden geçen en fazla 6 kaynak (mevzuat dâhil) gösterilir. Aday havuzunu değiştirmek için `SEMANTIC_CANDIDATES`, gösterilen kaynak sayısını değiştirmek için `MAX_SOURCES` kullanılabilir.
 
@@ -106,7 +135,7 @@ Bedesten arama davranışına ilişkin canlıda doğrulanmış notlar:
 
 ## ChatGPT MCP
 
-Vercel kurulumu ayrıca `/api/mcp` adresinde beş salt-okunur araç sunar. Doğal dildeki ana araştırma aracı seçilen karar kaynaklarını ve resmî mevzuatı tek çağrıda tarar; doğrulanmış kararları ile ilgili mevzuat maddelerini ayrı sonuç kümelerinde döndürür. Kesin filtreli karar araması ve ham mevzuat araması/getirme araçları da korunur. ChatGPT/Codex bağlantısı, güvenlik modeli ve mahkeme kapsamının dürüst sınırları için [MCP.md](./MCP.md) dosyasına bakın.
+Vercel kurulumu ayrıca `/api/mcp` adresinde yedi salt-okunur araç sunar. Doğal dildeki ana araştırma aracı seçilen karar kaynaklarını ve resmî mevzuatı tek çağrıda tarar; doğrulanmış kararları ile ilgili mevzuat maddelerini ayrı sonuç kümelerinde döndürür. Kesin filtreli karar araması ve ham mevzuat araması/getirme araçları da korunur. ChatGPT/Codex bağlantısı, güvenlik modeli ve mahkeme kapsamının dürüst sınırları için [MCP.md](./MCP.md) dosyasına bakın.
 
 Bedesten ve mevzuat istemci tasarımında incelenen MIT lisanslı açık kaynak projeler ve korunan lisans metni için [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) dosyasına bakın. Uygulama bu depolara çalışma zamanı bağımlılığı taşımaz.
 

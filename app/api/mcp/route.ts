@@ -28,7 +28,7 @@ async function handle(request: Request): Promise<Response> {
   if (contentLength > 100_000) return Response.json({ error: "MCP isteği çok büyük" }, { status: 413, headers: CORS_HEADERS });
 
   if (request.method === "POST") {
-    const limit = rateLimit(`mcp:${clientAddress(request)}`, 60, 60 * 60 * 1000);
+    const limit = await rateLimit(`mcp:${clientAddress(request)}`, 60, 60 * 60 * 1000);
     if (!limit.allowed) {
       return Response.json(
         { error: "Saatlik MCP istek sınırı doldu" },

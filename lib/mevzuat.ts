@@ -132,6 +132,102 @@ export async function searchLegislation(params: {
 const turndown = new TurndownService({ headingStyle: "atx", bulletListMarker: "-" });
 turndown.remove(["script", "style", "noscript"]);
 
+function markdown(bytes: Buffer, mimeType: string, label: string): LegislationDocument {
+  if (mimeType.includes("html") || mimeType.includes("text")) {
+    return { text: turndown.turndown(bytes.toString("utf8")).trim(), mimeType };
+  }
+  if (mimeType.includes("pdf")) {
+    throw new Error(`${label} PDF biçiminde döndü; tam mevzuat metnini kullanın`);
+  }
+  throw new Error(`Desteklenmeyen ${label} biçimi: ${mimeType}`);
+}
+
+export type ArticleNode = {
+  articleId: string;
+  articleNo: number;
+  title: string | null;
+  /** Kitap/kısım/bölüm başlıklarından oluşan üst yol. */
+  path: string[];
+  gerekceId: string | null;
+  updatedAt: string | null;
+};
+
+type RawNode = {
+  maddeId?: unknown;
+  maddeNo?: unknown;
+  title?: unknown;
+  gerekceId?: unknown;
+  guncellemeTarihi?: unknown;
+  children?: unknown;
+};
+
+/**
+ * Mevzuatın madde ağacını düz bir madde listesine indirger. Ağaçtaki
+ * numarasız düğümler (KİTAP, KISIM, BÖLÜM) madde değil başlıktır; bunlar
+ * maddenin `path` alanında üst yol olarak taşınır. Böylece bir maddenin
+ * numarası ve kimliği modelin metinden okuduğu değil, resmî servisin verdiği
+ * veri olur.
+ */
+export async function getArticleTree(legislationId: string): Promise<ArticleNode[]> {
+  if (!/^[a-zA-Z0-9_-]{1,100}$/.test(legislationId)) throw new Error("Geçersiz mevzuat kimliği");
+  const result = await post<{ children?: unknown }>("/mevzuatMaddeTree", { mevzuatId: legislationId });
+
+  const articles: ArticleNode[] = [];
+  const walk = (node: RawNode, path: string[]): void => {
+    const articleId = value(node.maddeId);
+    const title = value(node.title);
+    // Başlık düğümlerinde (KİTAP, KISIM, BÖLÜM) maddeNo null gelir. `Number(null)`
+    // sıfır ürettiği için tür kontrolü şart: aksi hâlde her başlık "madde 0"
+    // olarak listeye girer.
+    const rawNo = typeof node.maddeNo === "number" ? node.maddeNo : Number.NaN;
+    const articleNo = Number.isInteger(rawNo) && rawNo > 0 ? rawNo : null;
+    const children = Array.isArray(node.children) ? (node.children as RawNode[]) : [];
+
+    if (articleId && articleNo !== null) {
+      articles.push({
+        articleId,
+        articleNo,
+        title,
+        path,
+        gerekceId: value(node.gerekceId),
+        updatedAt: plausibleDecisionDate(node.guncellemeTarihi),
+      });
+    }
+    const nextPath = articleNo !== null || !title ? path : [...path, title];
+    for (const child of children) walk(child, nextPath);
+  };
+
+  for (const child of Array.isArray(result.children) ? (result.children as RawNode[]) : []) {
+    walk(child, []);
+  }
+  return articles.sort((a, b) => a.articleNo - b.articleNo);
+}
+
+export async function getArticleDocument(articleId: string): Promise<LegislationDocument> {
+  if (!/^[a-zA-Z0-9_-]{1,100}$/.test(articleId)) throw new Error("Geçersiz madde kimliği");
+  const result = await post<{ content?: string; mimeType?: string }>("/getDocumentContent", {
+    documentType: "MADDE",
+    id: articleId,
+  });
+  if (!result.content) throw new Error("Madde içeriği boş");
+  return markdown(Buffer.from(result.content, "base64"), result.mimeType ?? "text/html", "madde");
+}
+
+export async function getGerekceDocument(gerekceId: string): Promise<LegislationDocument> {
+  if (!/^[a-zA-Z0-9_-]{1,100}$/.test(gerekceId)) throw new Error("Geçersiz gerekçe kimliği");
+  // Bu uç, diğerlerinden farklı olarak alanı `mimetype` (küçük harfle) döndürür.
+  const result = await post<{ content?: string; mimetype?: string; mimeType?: string }>(
+    "/getGerekceContent",
+    { gerekceId }
+  );
+  if (!result.content) throw new Error("Gerekçe metni boş");
+  return markdown(
+    Buffer.from(result.content, "base64"),
+    result.mimetype ?? result.mimeType ?? "text/html",
+    "gerekçe"
+  );
+}
+
 export async function getLegislationDocument(legislationId: string): Promise<LegislationDocument> {
   if (!/^[a-zA-Z0-9_-]{1,100}$/.test(legislationId)) throw new Error("Geçersiz mevzuat kimliği");
   const result = await post<{ content?: string; mimeType?: string }>("/getDocumentContent", {

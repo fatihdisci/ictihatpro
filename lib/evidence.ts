@@ -6,6 +6,35 @@ function focusTerms(focus: string): string[] {
     .slice(0, 10);
 }
 
+export const PAGE_CHARS = Math.max(2000, Number(process.env.MCP_PAGE_CHARS) || 25_000);
+
+/**
+ * Odak temelli kesit uzun bir kararın tamamını asla göstermez ve kalanını
+ * isteyecek bir yol bırakmaz. Sayfalama bu boşluğu kapatır: metin, satır
+ * sonlarına yaslanan sabit boyutlu sayfalara bölünür; böylece cümleler
+ * ortadan kesilmez ve istemci tüm belgeyi sırayla okuyabilir.
+ */
+export function paginateText(body: string, pageSize = PAGE_CHARS): string[] {
+  if (body.length <= pageSize) return [body];
+
+  const pages: string[] = [];
+  let cursor = 0;
+  while (cursor < body.length) {
+    const target = cursor + pageSize;
+    if (target >= body.length) {
+      pages.push(body.slice(cursor));
+      break;
+    }
+    // Sayfanın son %40'lık diliminde bir satır sonu varsa oradan böl.
+    const earliest = cursor + Math.floor(pageSize * 0.6);
+    const boundary = body.lastIndexOf("\n", target);
+    const cut = boundary > earliest ? boundary + 1 : target;
+    pages.push(body.slice(cursor, cut));
+    cursor = cut;
+  }
+  return pages;
+}
+
 export function selectEvidence(body: string, focus: string, maxChars = 60_000): { text: string; complete: boolean } {
   if (body.length <= maxChars) return { text: body, complete: true };
 

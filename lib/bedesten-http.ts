@@ -1,3 +1,5 @@
+import { kvEnabled, kvIncrementWindow } from "./kv";
+
 const DEFAULT_CAPACITY = 1;
 const DEFAULT_REFILL_MS = 3500;
 const DEFAULT_MAX_WAIT_MS = 8000;
@@ -12,6 +14,10 @@ const legacyRefillMs = configuredNumber("BEDESTEN_MIN_GAP_MS", DEFAULT_REFILL_MS
 const CAPACITY = Math.max(1, Math.floor(configuredNumber("BEDESTEN_RATE_CAPACITY", DEFAULT_CAPACITY)));
 const REFILL_MS = Math.max(50, configuredNumber("BEDESTEN_RATE_REFILL_S", legacyRefillMs / 1000) * 1000);
 const MAX_WAIT_MS = Math.max(0, configuredNumber("BEDESTEN_RATE_MAX_WAIT_S", DEFAULT_MAX_WAIT_MS / 1000) * 1000);
+// Ölçülen kota 30 saniyede 10 istek; paylaşılan pencere pay bırakarak 8'de
+// tutulur, böylece kanarya ve eşzamanlı oturumlar için alan kalır.
+const SHARED_LIMIT = Math.max(1, Math.floor(configuredNumber("BEDESTEN_SHARED_LIMIT", 8)));
+const SHARED_WINDOW_MS = Math.max(1000, configuredNumber("BEDESTEN_SHARED_WINDOW_S", 30) * 1000);
 
 const DEFAULT_HEADERS = {
   Accept: "application/json",
@@ -75,16 +81,42 @@ async function inspectBucket(): Promise<number> {
   }
 }
 
+/**
+ * Yerel kova yalnızca bu süreçteki akışı düzler. Vercel'de aynı anda birden
+ * çok lambda örneği çalıştığında Bedesten'e giden gerçek hız "örnek sayısı ×
+ * yerel hız" olur ve ölçülen 10 istek/30 sn kotası aşılır. Upstash tanımlıysa
+ * tüm örnekler aynı sabit pencereyi paylaşır; tanımlı değilse davranış
+ * değişmez.
+ */
+async function acquireSharedSlot(deadline: number): Promise<void> {
+  if (!kvEnabled()) return;
+  while (true) {
+    const now = Date.now();
+    const window = Math.floor(now / SHARED_WINDOW_MS);
+    const count = await kvIncrementWindow(
+      `bedesten:quota:${window}`,
+      Math.ceil(SHARED_WINDOW_MS / 1000) + 5
+    );
+    // KV'ye ulaşılamıyorsa istek engellenmez: yerel kova hâlâ devrededir.
+    if (count === null || count <= SHARED_LIMIT) return;
+
+    const waitMs = (window + 1) * SHARED_WINDOW_MS - now;
+    if (waitMs > deadline - Date.now()) throw new BedestenRateLimitError(waitMs / 1000);
+    await wait(waitMs);
+  }
+}
+
 async function acquireToken(): Promise<void> {
   const deadline = Date.now() + MAX_WAIT_MS;
   while (true) {
     const waitMs = await inspectBucket();
-    if (waitMs <= 0) return;
+    if (waitMs <= 0) break;
     if (waitMs > deadline - Date.now()) {
       throw new BedestenRateLimitError(waitMs / 1000);
     }
     await wait(waitMs);
   }
+  await acquireSharedSlot(deadline);
 }
 
 function retryDelay(response: Response): number {

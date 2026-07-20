@@ -13,6 +13,16 @@ https://ictihatpro.vercel.app/api/mcp
 - `ictihat_getir`: Yalnızca arama sonucunda sunucunun imzaladığı belirteçle kararı açar ve esas/karar numaralarını tam metinde doğrular.
 - `mevzuat_ara`: Kanun, KHK, tüzük, yönetmelik, Cumhurbaşkanlığı düzenlemeleri, tebliğ ve mülga mevzuatta arama yapar.
 - `mevzuat_getir`: Yalnızca arama sonucundaki imzalı belirteçle resmî mevzuat metnini getirir.
+- `mevzuat_madde_listesi`: Mevzuatın resmî madde ağacını getirir. Madde numaraları ve başlıkları servisin verdiği veridir; metinden ayıklanmaz. `madde_no` veya `baslik_ara` ile daraltılır.
+- `mevzuat_madde_getir`: Tek maddenin resmî metnini kesintisiz getirir; `gerekce=true` ile madde gerekçesini de döndürür.
+
+### Madde erişimi neden ayrı
+
+`mevzuat_getir` kanunun tamamını indirip odak sorusuna göre kesit üretir; uzun kanunlarda bu kesit eksik kalabilir ve madde sınırları metinden regex'le tahmin edilir. Belirli bir madde soruluyorsa (ör. "TMK 166") `mevzuat_ara → mevzuat_madde_listesi → mevzuat_madde_getir` sırası kullanılmalıdır: bu yolda madde numarası, başlığı ve kimliği resmî servisten gelir, metin kesintisizdir ve `evidenceComplete` her zaman `true` döner.
+
+### Uzun belgelerde sayfalama
+
+`ictihat_getir` ve `mevzuat_getir` varsayılan olarak odakla ilişkili bir kesit döndürür. Belge kesildiğinde `evidenceComplete=false` olur ve `totalPages` alanı belgenin kaç sayfa olduğunu bildirir. Tam metni sırayla okumak için aynı araç `sayfa=1, 2, …` ile tekrar çağrılır; sayfalar satır sonlarına yaslanır, cümle ortasından kesilmez. Sayfa boyutu `MCP_PAGE_CHARS` ile değiştirilebilir (varsayılan 25.000 karakter).
 
 ## Kapsam sınırı
 

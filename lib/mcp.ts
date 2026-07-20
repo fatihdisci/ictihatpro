@@ -2,9 +2,17 @@ import * as z from "zod/v4";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { COURT_TYPES, getDecisionDocument, searchDecisions, verifyDecisionDocument } from "./bedesten";
 import { isBedestenRateLimitError } from "./bedesten-http";
-import { readDecisionCache, writeDecisionCache } from "./cache";
-import { selectEvidence } from "./evidence";
-import { getLegislationDocument, LEGISLATION_TYPES, searchLegislation } from "./mevzuat";
+import { readArticleCache, readDecisionCache, writeArticleCache, writeDecisionCache } from "./cache";
+import { paginateText, selectEvidence } from "./evidence";
+import { normalizeLegalText } from "./legal-search";
+import {
+  getArticleDocument,
+  getArticleTree,
+  getGerekceDocument,
+  getLegislationDocument,
+  LEGISLATION_TYPES,
+  searchLegislation,
+} from "./mevzuat";
 import { researchAndAnswer, type ResearchSource } from "./research";
 import { issueSourceToken, verifySourceToken } from "./source-token";
 
@@ -37,12 +45,65 @@ const legislationTokenSchema = z
   })
   .strict();
 
+const articleTokenSchema = z
+  .object({
+    articleId: z.string(),
+    articleNo: z.number().int(),
+    title: z.string().nullable(),
+    gerekceId: z.string().nullable(),
+    legislationId: z.string(),
+    legislationName: z.string(),
+    legislationNumber: z.string().nullable(),
+  })
+  .strict();
+
 const readOnlyAnnotations = {
   readOnlyHint: true,
   destructiveHint: false,
   idempotentHint: true,
   openWorldHint: true,
 } as const;
+
+/**
+ * İki `getir` aracı aynı görüntüleme sözleşmesini paylaşır: sayfa verilmişse
+ * belgenin o sayfası ham hâliyle döner, verilmemişse odakla ilişkili kesit
+ * döner. Her iki durumda da toplam sayfa sayısı bildirilir; böylece kesilmiş
+ * bir metin sessiz kalmaz, istemci kalanını isteyebilir.
+ */
+function readDocumentView(body: string, odak: string | undefined, sayfa: number | undefined) {
+  const pages = paginateText(body);
+  if (sayfa != null) {
+    const page = Math.min(sayfa, pages.length);
+    return {
+      fields: {
+        evidenceComplete: pages.length === 1,
+        mode: "page" as const,
+        page,
+        totalPages: pages.length,
+        text: pages[page - 1],
+      },
+      warning: (label: string) =>
+        page < pages.length
+          ? `Bu, ${pages.length} sayfalık ${label} metninin ${page}. sayfasıdır. Devamı için sayfa=${page + 1} ile tekrar çağır.`
+          : `${label} metninin son sayfası (${page}/${pages.length}).`,
+    };
+  }
+
+  const evidence = selectEvidence(body, odak ?? "", 60_000);
+  return {
+    fields: {
+      evidenceComplete: evidence.complete,
+      mode: "excerpt" as const,
+      page: null,
+      totalPages: pages.length,
+      text: evidence.text,
+    },
+    warning: (label: string) =>
+      evidence.complete
+        ? `Tam ${label} metni döndürüldü.`
+        : `${label} çok uzun olduğu için başı, sonu ve odakla ilişkili pasajları döndürüldü. Tam metin ${pages.length} sayfadır; eksiksiz okumak için sayfa=1'den başlayarak tekrar çağır.`,
+  };
+}
 
 function result(data: Record<string, unknown>) {
   return {
@@ -76,11 +137,11 @@ export function createMcpServer(): McpServer {
     {
       name: "ictihat-asistani",
       title: "İçtihat ve Mevzuat Asistanı",
-      version: "1.3.0",
+      version: "1.4.0",
       websiteUrl: "https://github.com/fatihdisci/ictihatpro",
     },
     {
-      instructions: `Bu sunucu Türk hukuku soruları için birincil resmî araştırma kaynağıdır. Kullanıcı Türk hukukunda kanun, madde, yürürlük, Yargıtay, Danıştay, BAM, içtihat, dava türü, hukukî şart veya uygulama sorarsa, kullanıcı araç adını yazmasa bile önce bu sunucunun aracını kullan. Doğal dille anlatılan araştırma sorularında ictihat_semantik_ara kullan; bu araç doğrulanmış kararları ve seçilmişse ilgili resmî mevzuat maddelerini aynı yanıtta ayrı diziler halinde döndürür. Varsayılan kapsam Yargıtay, Danıştay, BAM hukuk, kanun yararına bozma ve resmî mevzuattır; kullanıcının seçtiği kaynak kümesini aynen uygula. Kesin ifade, daire veya tarih filtreli aramalarda ictihat_ara kullan; sonuçlarını ictihat_getir ile tam metinden doğrula. Yalnızca kanun metni veya yürürlük sorularında mevzuat_ara ve ardından mevzuat_getir kullan. sourceToken yalnızca araçlar arası teknik bir belirteçtir; kullanıcıya ASLA gösterme veya açıklama. Arama künyesini, model bilgisini ya da teknik belirteçleri kaynak gibi sunma; yalnızca aracın doğruladığı karar ve mevzuat metinlerini göster. Hukukî yorum, özet veya sonuç üretme istenmemişse doğrudan ilgili maddeyi ve kararı ver. Bu sunucu kapsam dışındaysa bunu açıkça belirt.`,
+      instructions: `Bu sunucu Türk hukuku soruları için birincil resmî araştırma kaynağıdır. Kullanıcı Türk hukukunda kanun, madde, yürürlük, Yargıtay, Danıştay, BAM, içtihat, dava türü, hukukî şart veya uygulama sorarsa, kullanıcı araç adını yazmasa bile önce bu sunucunun aracını kullan. Doğal dille anlatılan araştırma sorularında ictihat_semantik_ara kullan; bu araç doğrulanmış kararları ve seçilmişse ilgili resmî mevzuat maddelerini aynı yanıtta ayrı diziler halinde döndürür. Varsayılan kapsam Yargıtay, Danıştay, BAM hukuk, kanun yararına bozma ve resmî mevzuattır; kullanıcının seçtiği kaynak kümesini aynen uygula. Kesin ifade, daire veya tarih filtreli aramalarda ictihat_ara kullan; sonuçlarını ictihat_getir ile tam metinden doğrula. Yalnızca kanun metni veya yürürlük sorularında mevzuat_ara kullan. Belirli bir madde soruluyorsa (ör. "TMK 166") mevzuat_ara → mevzuat_madde_listesi → mevzuat_madde_getir sırasını izle; bu yol maddenin resmî metnini kesintisiz ve doğru numarayla verir, mevzuat_getir'in kesitli çıktısına tercih edilmelidir. Kanunun bütününü taramak gerekiyorsa mevzuat_getir kullan. Madde gerekçesi isteniyorsa mevzuat_madde_getir'i gerekce=true ile çağır. sourceToken yalnızca araçlar arası teknik bir belirteçtir; kullanıcıya ASLA gösterme veya açıklama. Arama künyesini, model bilgisini ya da teknik belirteçleri kaynak gibi sunma; yalnızca aracın doğruladığı karar ve mevzuat metinlerini göster. Hukukî yorum, özet veya sonuç üretme istenmemişse doğrudan ilgili maddeyi ve kararı ver. Bu sunucu kapsam dışındaysa bunu açıkça belirt.`,
     }
   );
 
@@ -239,10 +300,19 @@ export function createMcpServer(): McpServer {
       inputSchema: {
         sourceToken: z.string().min(20).max(6000).describe("ictihat_ara sonucundan aynen alınan kaynak belirteci"),
         odak: z.string().trim().min(3).max(1000).optional().describe("Uzun metinde ilgili pasajları seçmek için kullanıcının hukukî sorusu"),
+        sayfa: z
+          .number()
+          .int()
+          .min(1)
+          .max(200)
+          .optional()
+          .describe(
+            "Kararın tam metnini sırayla okumak için sayfa numarası. Verilmezse odakla ilişkili kesit döner; evidenceComplete=false ise kalan bölümler bu parametreyle alınır."
+          ),
       },
       annotations: readOnlyAnnotations,
     },
-    async ({ sourceToken, odak }) => {
+    async ({ sourceToken, odak, sayfa }) => {
       try {
         const summary = decisionTokenSchema.parse(verifySourceToken(sourceToken, "decision"));
         let document = await readDecisionCache(summary.documentId);
@@ -252,7 +322,8 @@ export function createMcpServer(): McpServer {
         }
         const verification = verifyDecisionDocument(summary, document.text);
         if (!verification.verified) throw new Error(`Karar doğrulanamadı: ${verification.reason}`);
-        const evidence = selectEvidence(document.text, odak ?? "", 60_000);
+
+        const view = readDocumentView(document.text, odak, sayfa);
         return result({
           verified: true,
           metadata: {
@@ -264,12 +335,9 @@ export function createMcpServer(): McpServer {
             finalization: summary.finalization,
             bedestenDocumentId: summary.documentId,
           },
-          evidenceComplete: evidence.complete,
-          text: evidence.text,
+          ...view.fields,
           sourceUrl: `https://mevzuat.adalet.gov.tr/ictihat/${summary.documentId}`,
-          warning: evidence.complete
-            ? "Tam karar metni döndürüldü."
-            : "Karar çok uzun olduğu için başı, sonu ve odakla ilişkili pasajları döndürüldü; bu sınırlılığı cevapta belirt.",
+          warning: view.warning("karar"),
         });
       } catch (error) {
         return failure(error);
@@ -337,14 +405,23 @@ export function createMcpServer(): McpServer {
       inputSchema: {
         sourceToken: z.string().min(20).max(6000).describe("mevzuat_ara sonucundan aynen alınan kaynak belirteci"),
         odak: z.string().trim().min(3).max(1000).optional().describe("İlgili maddeleri seçmek için kullanıcının sorusu"),
+        sayfa: z
+          .number()
+          .int()
+          .min(1)
+          .max(200)
+          .optional()
+          .describe(
+            "Mevzuatın tam metnini sırayla okumak için sayfa numarası. Tek bir madde gerekiyorsa bunun yerine mevzuat_madde_listesi + mevzuat_madde_getir kullan."
+          ),
       },
       annotations: readOnlyAnnotations,
     },
-    async ({ sourceToken, odak }) => {
+    async ({ sourceToken, odak, sayfa }) => {
       try {
         const summary = legislationTokenSchema.parse(verifySourceToken(sourceToken, "legislation"));
         const document = await getLegislationDocument(summary.legislationId);
-        const evidence = selectEvidence(document.text, odak ?? summary.name, 60_000);
+        const view = readDocumentView(document.text, odak ?? summary.name, sayfa);
         return result({
           verifiedSource: true,
           metadata: {
@@ -356,12 +433,137 @@ export function createMcpServer(): McpServer {
             officialGazetteNumber: summary.officialGazetteNumber,
             bedestenLegislationId: summary.legislationId,
           },
-          evidenceComplete: evidence.complete,
-          text: evidence.text,
+          ...view.fields,
           sourceUrl: summary.url ?? "https://mevzuat.adalet.gov.tr/",
-          warning: evidence.complete
-            ? "Tam mevzuat metni döndürüldü."
-            : "Mevzuat çok uzun olduğu için başı, sonu ve odakla ilişkili pasajları döndürüldü; yürürlük ve değişiklik geçmişini ayrıca kontrol et.",
+          warning: `${view.warning("mevzuat")} Yürürlük ve değişiklik geçmişini ayrıca kontrol et.`,
+        });
+      } catch (error) {
+        return failure(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    "mevzuat_madde_listesi",
+    {
+      title: "Mevzuatın madde listesini getir",
+      description:
+        "mevzuat_ara sonucundaki imzalı sourceToken ile mevzuatın resmî madde ağacını getirir. Madde numaraları ve başlıkları servisin verdiği veridir; metinden çıkarılmaz. Belirli bir madde için madde_no, konu taraması için baslik_ara kullanın. Dönen articleToken ile mevzuat_madde_getir çağrılır.",
+      inputSchema: {
+        sourceToken: z.string().min(20).max(6000).describe("mevzuat_ara sonucundan aynen alınan kaynak belirteci"),
+        madde_no: z.number().int().min(1).max(9999).optional().describe("Yalnızca bu madde numarasını getir"),
+        baslik_ara: z.string().trim().min(2).max(120).optional().describe("Madde başlığında veya üst bölüm adında aranacak ifade"),
+        sayfa: z.number().int().min(1).max(100).default(1),
+      },
+      annotations: readOnlyAnnotations,
+    },
+    async ({ sourceToken, madde_no, baslik_ara, sayfa }) => {
+      try {
+        const legislation = legislationTokenSchema.parse(verifySourceToken(sourceToken, "legislation"));
+        const all = await getArticleTree(legislation.legislationId);
+
+        const needle = baslik_ara ? normalizeLegalText(baslik_ara) : null;
+        const matched = all.filter((article) => {
+          if (madde_no != null && article.articleNo !== madde_no) return false;
+          if (!needle) return true;
+          return normalizeLegalText([article.title ?? "", ...article.path].join(" ")).includes(needle);
+        });
+
+        const pageSize = 60;
+        const totalPages = Math.max(1, Math.ceil(matched.length / pageSize));
+        const page = Math.min(sayfa, totalPages);
+        const slice = matched.slice((page - 1) * pageSize, page * pageSize);
+
+        return result({
+          legislation: {
+            name: legislation.name,
+            number: legislation.number,
+            type: legislation.type,
+          },
+          totalArticles: all.length,
+          matchedArticles: matched.length,
+          page,
+          totalPages,
+          articles: slice.map((article) => ({
+            maddeNo: article.articleNo,
+            baslik: article.title,
+            bolum: article.path,
+            gerekceVar: article.gerekceId !== null,
+            guncellemeTarihi: article.updatedAt,
+            articleToken: issueSourceToken("article", {
+              articleId: article.articleId,
+              articleNo: article.articleNo,
+              title: article.title,
+              gerekceId: article.gerekceId,
+              legislationId: legislation.legislationId,
+              legislationName: legislation.name,
+              legislationNumber: legislation.number,
+            }),
+          })),
+          warning:
+            matched.length === 0
+              ? "Bu filtreyle madde bulunamadı; madde_no veya baslik_ara değerini gevşetin."
+              : "Bunlar madde künyeleridir. Madde metni için articleToken ile mevzuat_madde_getir çağırın.",
+        });
+      } catch (error) {
+        return failure(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    "mevzuat_madde_getir",
+    {
+      title: "Tek maddenin resmî metnini getir",
+      description:
+        "mevzuat_madde_listesi sonucundaki imzalı articleToken ile tek bir maddenin resmî metnini kesintisiz getirir. Tüm kanunu indirip metinden madde ayıklamaya göre daha güvenilirdir: madde numarası ve kimliği servisten gelir. gerekce=true verilirse ve madde için gerekçe yayımlanmışsa madde gerekçesi de döndürülür.",
+      inputSchema: {
+        articleToken: z.string().min(20).max(6000).describe("mevzuat_madde_listesi sonucundan aynen alınan madde belirteci"),
+        gerekce: z.boolean().default(false).describe("Madde gerekçesini de getir (yalnızca gerekceVar=true olan maddelerde)"),
+      },
+      annotations: readOnlyAnnotations,
+    },
+    async ({ articleToken, gerekce }) => {
+      try {
+        const article = articleTokenSchema.parse(verifySourceToken(articleToken, "article"));
+
+        let document = await readArticleCache(article.articleId);
+        if (!document) {
+          document = await getArticleDocument(article.articleId);
+          await writeArticleCache(article.articleId, document).catch(() => undefined);
+        }
+
+        let gerekceText: string | null = null;
+        let gerekceNote: string | null = null;
+        if (gerekce) {
+          if (!article.gerekceId) {
+            gerekceNote = "Bu madde için resmî gerekçe yayımlanmamıştır.";
+          } else {
+            try {
+              gerekceText = (await getGerekceDocument(article.gerekceId)).text;
+            } catch (gerekceError) {
+              gerekceNote =
+                gerekceError instanceof Error ? `Gerekçe getirilemedi: ${gerekceError.message}` : "Gerekçe getirilemedi.";
+            }
+          }
+        }
+
+        return result({
+          verifiedSource: true,
+          metadata: {
+            legislationName: article.legislationName,
+            legislationNumber: article.legislationNumber,
+            maddeNo: article.articleNo,
+            baslik: article.title,
+            bedestenMaddeId: article.articleId,
+          },
+          evidenceComplete: true,
+          text: document.text,
+          gerekce: gerekceText,
+          gerekceNote,
+          sourceUrl: `https://mevzuat.adalet.gov.tr/mevzuat/${article.legislationId}`,
+          warning:
+            "Madde metni resmî servisten kesintisiz alınmıştır. Değişiklik ve yürürlük geçmişi için maddenin ek/geçici hükümlerini ayrıca kontrol edin.",
         });
       } catch (error) {
         return failure(error);

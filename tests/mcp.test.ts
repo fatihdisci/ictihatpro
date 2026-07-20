@@ -15,7 +15,7 @@ describe("MCP sunucusu", () => {
     else process.env.SESSION_SECRET = originalSecret;
   });
 
-  it("karar ve mevzuatı birlikte araştıran beş salt-okunur hukuk aracını protokol üzerinden listeler", async () => {
+  it("karar ve mevzuatı birlikte araştıran yedi salt-okunur hukuk aracını protokol üzerinden listeler", async () => {
     const server = createMcpServer();
     const client = new Client({ name: "ictihat-test-client", version: "1.0.0" });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -29,6 +29,8 @@ describe("MCP sunucusu", () => {
       "ictihat_getir",
       "mevzuat_ara",
       "mevzuat_getir",
+      "mevzuat_madde_listesi",
+      "mevzuat_madde_getir",
     ]);
     expect(listed.tools.every((tool) => tool.annotations?.readOnlyHint === true)).toBe(true);
     expect(client.getInstructions()).toContain("kullanıcı araç adını yazmasa bile önce bu sunucunun aracını kullan");

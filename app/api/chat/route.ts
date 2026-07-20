@@ -25,7 +25,7 @@ export async function POST(request: Request) {
   if (contentLength > 20_000) {
     return Response.json({ error: "İstek çok büyük" }, { status: 413 });
   }
-  const limit = rateLimit(`chat:${clientAddress(request)}`, 20, 60 * 60 * 1000);
+  const limit = await rateLimit(`chat:${clientAddress(request)}`, 20, 60 * 60 * 1000);
   if (!limit.allowed) {
     return Response.json(
       { error: "Saatlik araştırma sınırı doldu" },

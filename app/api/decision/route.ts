@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   if (!(await isAuthorized())) {
     return Response.json({ error: "Oturum gerekli" }, { status: 401 });
   }
-  const limit = rateLimit(`decision:${clientAddress(request)}`, 60, 60 * 60 * 1000);
+  const limit = await rateLimit(`decision:${clientAddress(request)}`, 60, 60 * 60 * 1000);
   if (!limit.allowed) {
     return Response.json(
       { error: "Saatlik karar görüntüleme sınırı doldu" },

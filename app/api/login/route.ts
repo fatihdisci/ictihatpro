@@ -29,7 +29,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Geçersiz istek kaynağı" }, { status: 403 });
   }
   const address = clientAddress(request);
-  const limit = rateLimit(`login:${address}`, 8, 15 * 60 * 1000);
+  const limit = await rateLimit(`login:${address}`, 8, 15 * 60 * 1000);
   if (!limit.allowed) {
     return Response.json(
       { error: "Çok fazla giriş denemesi" },
