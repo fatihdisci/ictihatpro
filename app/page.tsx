@@ -34,6 +34,7 @@ export default function Home() {
   const endRef = useRef<HTMLDivElement>(null);
   const dockRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const focusAfterPrefillRef = useRef(false);
   const lastQuestionRef = useRef("");
   const lastSourcesRef = useRef<ResearchSource[]>(ALL_SOURCES);
   const reduced = useReducedMotion();
@@ -87,12 +88,19 @@ export default function Home() {
     };
   }, [authenticated, docked]);
 
-  // Textarea içeriğe göre büyür (CSS max-height ile sınırlı).
+  // Textarea içeriğe göre büyür (CSS max-height ile sınırlı). Hazır araştırma
+  // kutuyu doldurduğunda odak ve imleç de burada ayarlanır: değer ancak bu
+  // noktada DOM'a yansımış olur.
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
+    if (focusAfterPrefillRef.current) {
+      focusAfterPrefillRef.current = false;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    }
   }, [question, docked]);
 
   function toggleTheme(event: React.MouseEvent) {
@@ -194,12 +202,17 @@ export default function Home() {
     runResearch(lastQuestionRef.current, lastSourcesRef.current);
   }
 
-  function startQuickResearch(search: QuickSearch) {
+  /**
+   * Hazır araştırma yalnızca kutuyu doldurur, aramayı başlatmaz: kullanıcı
+   * göndermeden önce soruyu kendi olayına göre düzenleyebilsin ve kapsamı
+   * değiştirebilsin. Arama, "Araştırmayı başlat" düğmesiyle veya Enter ile
+   * yapılır.
+   */
+  function prefillQuickSearch(search: QuickSearch) {
     if (busy) return;
-    const sources = [...search.sources];
-    setSelectedSources(sources);
-    setQuestion("");
-    void runResearch(search.query, sources);
+    setSelectedSources([...search.sources]);
+    setQuestion(search.query);
+    focusAfterPrefillRef.current = true;
   }
 
   function toggleSource(source: ResearchSource) {
@@ -304,7 +317,10 @@ export default function Home() {
             <motion.div className="presets" {...fadeUp(0.28)}>
               <div className="presets-head">
                 <h2>Hazır araştırmalar</h2>
-                <p>Birini seçtiğinizde ilgili içtihat ve mevzuat birlikte aranır. Kendi sorunuzu da yazabilirsiniz.</p>
+                <p>
+                  Birini seçtiğinizde soru arama kutusuna yazılır ve kapsamı ayarlanır; düzenleyip
+                  kendiniz başlatabilirsiniz.
+                </p>
               </div>
               <div className="preset-grid">
                 {QUICK_SEARCHES.map((search, index) => (
@@ -314,8 +330,8 @@ export default function Home() {
                     initial={{ opacity: 0, y: 12 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ ...spring.glide, delay: 0.34 + index * 0.025 }}
-                    onClick={() => startQuickResearch(search)}
-                    aria-label={`${search.label} için hazır araştırmayı aç`}
+                    onClick={() => prefillQuickSearch(search)}
+                    aria-label={`${search.label} sorusunu arama kutusuna yaz`}
                     disabled={busy}
                     whileHover={reduced ? undefined : { y: -1 }}
                     whileTap={{ scale: 0.99 }}
