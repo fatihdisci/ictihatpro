@@ -35,9 +35,30 @@ cp .env.example .env.local
 ```dotenv
 DEEPSEEK_API_KEY=sk-...
 DEEPSEEK_MODEL=deepseek-v4-pro
+DEEPSEEK_MODEL_FAST=deepseek-v4-flash
 APP_PASSWORD=uzun-ve-benzersiz-bir-parola
 SESSION_SECRET=openssl-ile-uretilmis-en-az-32-karakterlik-deger
 ```
+
+### Model katmanları
+
+Uygulama DeepSeek'i üç ayrı işte kullanır ve bunlar aynı zorlukta değildir:
+
+| İş | Katman | Muhakeme |
+|---|---|---|
+| Arama planı (soruyu Bedesten sorgusuna çevirir) | `DEEPSEEK_MODEL_FAST` | kapalı |
+| Semantik yeniden sıralama (OpenRouter yoksa) | `DEEPSEEK_MODEL_FAST` | kapalı |
+| Cevap sentezi (kullanıcıya görünen tek çıktı) | `DEEPSEEK_MODEL` | **açık** |
+
+İlk iki çağrı dar şemalı ve tek doğru cevabı olan dönüştürmelerdir; ucuz katman
+yeterlidir ve düşük gecikmesi Bedesten turunu erken başlatır. Sentez ise
+kullanıcının gördüğü metni yazdığı için güçlü katmanda ve muhakeme açık çalışır.
+
+Sağlayıcı muhakeme kipini zorunlu araç seçimiyle birlikte kabul etmez; bu
+nedenle sentez isteğinde araç seçimi modele bırakılır. Sağlayıcı yine de
+reddederse istek muhakeme kapatılarak bir kez yinelenir, o da olmazsa JSON
+kipiyle onarım denemesi yapılır. Yani muhakeme desteklenmese bile araştırma
+başarısız olmaz.
 
 Oturum sırrı üretmek için:
 

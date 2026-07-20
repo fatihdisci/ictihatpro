@@ -26,6 +26,15 @@ export type DeepSeekToolChoice =
   | "required"
   | { type: "function"; function: { name: string } };
 
+/**
+ * `pro` kullanıcıya görünen tek çıktı olan sentez için; `fast` ise dar şemalı,
+ * tek doğru cevabı olan yardımcı çağrılar (arama planı, yeniden sıralama)
+ * içindir. Flash yapılandırılmış görevlerde Pro'nun 1-2 puan gerisinde ama
+ * belirgin biçimde ucuz ve yüksek eşzamanlılıklıdır; bu çağrılar Bedesten
+ * kotasını beklettiği için düşük gecikme ayrıca kazançtır.
+ */
+export type DeepSeekTier = "pro" | "fast";
+
 type CompletionOptions = {
   messages: DeepSeekMessage[];
   tools?: DeepSeekTool[];
@@ -33,51 +42,79 @@ type CompletionOptions = {
   json?: boolean;
   maxTokens?: number;
   signal?: AbortSignal;
+  tier?: DeepSeekTier;
+  /** Belirtilmezse araçlı çağrılarda kapalı, araçsız çağrılarda açıktır. */
+  reasoning?: boolean;
 };
+
+function resolveModel(tier: DeepSeekTier): string {
+  return tier === "fast"
+    ? process.env.DEEPSEEK_MODEL_FAST ?? "deepseek-v4-flash"
+    : process.env.DEEPSEEK_MODEL ?? "deepseek-v4-pro";
+}
+
+// Sağlayıcı thinking ile zorunlu araç seçimini birlikte kabul etmiyor. İstek
+// gövdesi buna göre kurulur; yine de reddedilirse thinking kapatılıp bir kez
+// daha denenir.
+const REASONING_CONFLICT = /think|reason|tool_choice/i;
+
+function buildBody(options: CompletionOptions, model: string, reasoning: boolean): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    model,
+    messages: options.messages,
+    max_tokens: options.maxTokens ?? 5000,
+    thinking: { type: reasoning ? "enabled" : "disabled" },
+    reasoning_effort: "medium",
+  };
+  if (options.tools?.length) {
+    body.tools = options.tools;
+    // `auto` zaten sağlayıcı varsayılanı olduğu için gönderilmez. Thinking
+    // açıkken zorunlu araç seçimi de gönderilemez; bu durumda araç çağrısı
+    // modele bırakılır, çağırmazsa çağıran taraf JSON onarımına düşer.
+    const forced = options.toolChoice && options.toolChoice !== "auto";
+    if (forced && !reasoning) body.tool_choice = options.toolChoice;
+  }
+  if (options.json) body.response_format = { type: "json_object" };
+  return body;
+}
 
 export async function complete(options: CompletionOptions): Promise<DeepSeekMessage> {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) throw new Error("DEEPSEEK_API_KEY tanımlı değil");
 
   const baseUrl = (process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com").replace(/\/$/, "");
-  const model = process.env.DEEPSEEK_MODEL ?? "deepseek-v4-pro";
-  // DeepSeek tool-call conversations cannot switch thinking mode between turns:
-  // it then demands a reasoning_content value that a non-thinking tool turn
-  // never produced. Keep the whole tool loop non-thinking. The final synthesis
-  // is a separate request and still uses thinking.
-  const toolConversation = Boolean(options.tools?.length);
-  const body: Record<string, unknown> = {
-    model,
-    messages: options.messages,
-    max_tokens: options.maxTokens ?? 5000,
-    thinking: { type: toolConversation ? "disabled" : "enabled" },
-    reasoning_effort: "medium",
-  };
-  if (options.tools) {
-    body.tools = options.tools;
-    // `auto` is the provider default. Omitting it preserves tool calling while
-    // avoiding DeepSeek's thinking-mode/tool_choice incompatibility.
-    if (options.toolChoice && options.toolChoice !== "auto") body.tool_choice = options.toolChoice;
-  }
-  if (options.json) body.response_format = { type: "json_object" };
+  const model = resolveModel(options.tier ?? "pro");
+  const reasoning = options.reasoning ?? !options.tools?.length;
 
   const timeout = AbortSignal.timeout(240_000);
   const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-    signal,
-    cache: "no-store",
-  });
 
+  const send = (useReasoning: boolean) =>
+    fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(buildBody(options, model, useReasoning)),
+      signal,
+      cache: "no-store",
+    });
+
+  let response = await send(reasoning);
   if (!response.ok) {
-    const detail = (await response.text()).slice(0, 1000);
-    throw new Error(`DeepSeek hatası: HTTP ${response.status}${detail ? ` — ${detail}` : ""}`);
+    let detail = (await response.text()).slice(0, 1000);
+    // Sağlayıcı thinking'i bu istekle bağdaştıramıyorsa araştırma tamamen
+    // başarısız olmasın: aynı istek reasoning kapatılarak yinelenir.
+    if (response.status === 400 && reasoning && REASONING_CONFLICT.test(detail)) {
+      response = await send(false);
+      if (!response.ok) detail = (await response.text()).slice(0, 1000);
+    }
+    if (!response.ok) {
+      throw new Error(`DeepSeek hatası: HTTP ${response.status}${detail ? ` — ${detail}` : ""}`);
+    }
   }
+
   const data = (await response.json()) as {
     choices?: Array<{ message?: DeepSeekMessage }>;
   };

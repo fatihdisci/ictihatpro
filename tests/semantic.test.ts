@@ -98,3 +98,26 @@ describe("semantik karar sıralaması", () => {
     expect(ranked.results[0].id).toBe("b");
   });
 });
+
+describe("semantik sıralama model katmanı", () => {
+  it("DeepSeek yeniden sıralamasını ucuz katmanda çalıştırır", async () => {
+    delete process.env.OPENROUTER_API_KEY;
+    vi.mocked(complete).mockResolvedValue({
+      role: "assistant",
+      tool_calls: [
+        {
+          id: "1",
+          type: "function",
+          function: {
+            name: "kararlari_anlamsal_sirala",
+            arguments: JSON.stringify({ results: [{ id: "a", score: 80 }] }),
+          },
+        },
+      ],
+    });
+
+    await semanticRerank(`katman-testi-${Math.random()}`, [{ id: "a", text: "karar metni" }]);
+
+    expect(vi.mocked(complete).mock.calls.at(-1)?.[0].tier).toBe("fast");
+  });
+});

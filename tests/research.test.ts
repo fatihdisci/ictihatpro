@@ -401,3 +401,46 @@ describe("tek turlu araştırma akışı", () => {
     expect(answer.title).toBe("Sonuç");
   });
 });
+
+describe("model katmanı seçimi", () => {
+  it("arama planını ucuz katmanda, sentezi güçlü katmanda muhakeme açık çalıştırır", async () => {
+    // Bilinen rotalara uymayan bir soru: plan çağrısı gerçekten yapılır.
+    const question = "Kat karşılığı inşaat sözleşmesinde arsa sahibinin temerrüdü nasıl değerlendirilir?";
+
+    vi.mocked(complete)
+      .mockResolvedValueOnce(
+        toolCallMessage("arama_plani_yaz", {
+          decisionQuery: "kat karşılığı AND temerrüt",
+          legislation: [],
+        })
+      )
+      .mockResolvedValueOnce(
+        toolCallMessage("dogrulanmis_cevap_yaz", {
+          title: "Kat karşılığı inşaat",
+          summary: "Özet",
+          summarySourceIds: ["K1"],
+          sections: [],
+          limitations: [],
+        })
+      );
+    vi.mocked(searchDecisions).mockResolvedValue({ total: 1, decisions: [decisionSummary("3333")] });
+    vi.mocked(getDecisionDocument).mockResolvedValue({
+      mimeType: "text/html",
+      text: "Kat karşılığı inşaat sözleşmesinde arsa sahibinin temerrüdü ve yükleniciye etkisi. ".repeat(20),
+    });
+    vi.mocked(semanticRerank).mockResolvedValue({
+      provider: "deepseek-rerank",
+      results: [{ id: "3333", score: 0.95 }],
+    });
+
+    await researchAndAnswer(question, vi.fn(), undefined, ["YARGITAY"], "analysis");
+
+    const [planCall, synthesisCall] = vi.mocked(complete).mock.calls.map((call) => call[0]);
+
+    expect(planCall.tier).toBe("fast");
+    expect(planCall.reasoning).toBeUndefined();
+
+    expect(synthesisCall.tier).toBe("pro");
+    expect(synthesisCall.reasoning).toBe(true);
+  });
+});

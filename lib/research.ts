@@ -514,6 +514,9 @@ async function createResearchPlan(
       tools: [PLAN_TOOL],
       toolChoice: { type: "function", function: { name: "arama_plani_yaz" } },
       maxTokens: 1400,
+      // Plan dar şemalı ve tek doğru cevabı olan bir dönüştürmedir; ucuz
+      // katman yeterlidir ve düşük gecikmesi Bedesten turunu erken başlatır.
+      tier: "fast",
       signal,
     });
     const raw = response.tool_calls?.find((call) => call.function.name === "arama_plani_yaz")?.function.arguments;
@@ -1047,6 +1050,11 @@ ${sourceBlock}`;
           attempt === 0 ? { type: "function", function: { name: "dogrulanmis_cevap_yaz" } } : undefined,
         json: attempt !== 0,
         maxTokens: 2800,
+        // Kullanıcıya görünen tek çıktı budur: güçlü katman ve muhakeme açık.
+        // Araç varlığına bağlı örtük davranış yerine açıkça isteniyor; ilk
+        // deneme başarısız olursa ikinci deneme JSON kipiyle onarım yapar.
+        tier: "pro",
+        reasoning: true,
         signal,
       });
       const structured =

@@ -157,6 +157,9 @@ async function rankWithDeepSeek(
     tools: [RERANK_TOOL],
     toolChoice: { type: "function", function: { name: "kararlari_anlamsal_sirala" } },
     maxTokens: 1200,
+    // Yalnızca puanlama yapar, hukukî çıktı üretmez; ucuz katman yeterlidir.
+    // Kalite yetersiz gelirse DEEPSEEK_MODEL_FAST=deepseek-v4-pro ile geri alınır.
+    tier: "fast",
     signal,
   });
   const raw = response.tool_calls?.find((call) => call.function.name === "kararlari_anlamsal_sirala")?.function.arguments;
