@@ -76,10 +76,60 @@ export function legislationSolrQuery(value: string): string {
 
 type Article = { start: number; text: string };
 
+/**
+ * Türk mevzuatında kenar başlıkları ("b. Kullanma yasağı, feragat ve hak
+ * düşürücü süre") ait oldukları maddeden ÖNCE gelir. Metin "Madde N"den
+ * bölündüğü için bu başlıklar bir önceki maddenin sonunda kalır ve o maddeye
+ * ait sayılır. Sonuç: başlıktaki kavramlar yanlış maddeye puan kazandırır;
+ * örneğin "Yasal önalım hakkı" başlığı TMK 731'i, asıl 732'nin önüne geçirir.
+ * Bu yüzden sondaki başlık satırları sonraki maddeye taşınır.
+ */
+function isHeadingLine(line: string): boolean {
+  const text = line.trim();
+  if (!text || /madde\s+\d/iu.test(text)) return false;
+  const bare = text.replace(/^\*+|\*+$/g, "").replace(/^#+\s*/, "").trim();
+  if (!bare || bare.length > 120) return false;
+  // Ya tamamen kalın yazılmış bir satır ya da "II.", "1.", "a." gibi bir
+  // bölüm numarasıyla başlayan kısa bir satır başlıktır.
+  const fullyBold = /^\*\*.*\*\*$/.test(text);
+  const numbered = /^(?:[IVXLCDM]{1,6}|\d{1,2}|[a-zçğıöşü])\s*\\?\.\s+\S/u.test(bare);
+  return fullyBold || numbered;
+}
+
+function detachTrailingHeadings(text: string): { body: string; headings: string } {
+  const lines = text.split("\n");
+  let cut = lines.length;
+  let moved = 0;
+  for (let index = lines.length - 1; index >= 0 && moved < 8; index -= 1) {
+    const line = lines[index];
+    if (!line.trim()) {
+      cut = index;
+      continue;
+    }
+    if (!isHeadingLine(line)) break;
+    cut = index;
+    moved += 1;
+  }
+  if (moved === 0) return { body: text, headings: "" };
+  return { body: lines.slice(0, cut).join("\n").trim(), headings: lines.slice(cut).join("\n").trim() };
+}
+
 function splitArticles(body: string): Article[] {
   const pattern = /(?:^|\n)\s*(?:#{1,6}\s*)?\*{0,2}(?:(?:ek|geçici|mükerrer)\s+)?madde\s+\d+(?:\s*\/\s*[a-zçğıöşü0-9]+)?\s*[.\-–—:]*/gimu;
   const starts = [...body.matchAll(pattern)].map((match) => match.index ?? 0);
-  return starts.map((start, index) => ({ start, text: body.slice(start, starts[index + 1] ?? body.length).trim() }));
+  const raw = starts.map((start, index) => ({
+    start,
+    text: body.slice(start, starts[index + 1] ?? body.length).trim(),
+  }));
+
+  const articles: Article[] = [];
+  let pending = "";
+  for (const article of raw) {
+    const { body: own, headings } = detachTrailingHeadings(article.text);
+    articles.push({ start: article.start, text: pending ? `${pending}\n\n${own}` : own });
+    pending = headings;
+  }
+  return articles;
 }
 
 function queryGroups(query: string): string[][] {
@@ -101,22 +151,64 @@ function scoreArticle(text: string, groups: string[][], requireEveryGroup: boole
   return groupScores.reduce((sum, score) => sum + score, 0);
 }
 
-export function relevantLegislationArticles(body: string, query: string, maxArticles = 2, maxChars = 5000): string {
+/**
+ * Ayırt ediciliği toplam geçiş sayısıyla ölçmek yanıltır: bir terim tek bir
+ * maddede onlarca kez geçebilir. Konuyu tanımlayan terim az sayıda maddeye
+ * yoğunlaşır ("önalım"), sık kelime ise kanunun her yerine dağılır ("yasal").
+ * Bu yüzden ölçüt, terimin geçtiği madde sayısıdır.
+ */
+function articleFrequency(articles: Article[], group: string[]): number {
+  return articles.filter((article) => {
+    const normalized = normalizeLegalText(article.text);
+    return group.some((term) => {
+      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(escaped, "u").test(normalized);
+    });
+  }).length;
+}
+
+function rank(articles: Article[], groups: string[][], requireEveryGroup: boolean) {
+  return articles
+    .map((article) => ({ ...article, score: scoreArticle(article.text, groups, requireEveryGroup) }))
+    .filter((article) => article.score > 0)
+    .sort((a, b) => b.score - a.score || a.start - b.start);
+}
+
+/**
+ * Bir hukukî konu tek maddeye sığmaz: önalımda bildirim, süre ve bedel üç ayrı
+ * maddededir. Bu yüzden birden çok madde döndürülür ve AND sorgusu yeterli
+ * madde bulamazsa kalan yerler gevşetilmiş (OR) eşleşmeyle doldurulur. Aksi
+ * hâlde dar bir sorgu, konunun asıl maddelerini sessizce eler.
+ */
+export function relevantLegislationArticles(body: string, query: string, maxArticles = 4, maxChars = 9000): string {
   const articles = splitArticles(body);
   if (articles.length === 0) return "";
   const groups = queryGroups(query);
   if (groups.length === 0) return "";
   const requireEveryGroup = /\s+AND\s+/i.test(query);
 
-  const selected = articles
-    .map((article) => ({ ...article, score: scoreArticle(article.text, groups, requireEveryGroup) }))
-    .filter((article) => article.score > 0)
-    .sort((a, b) => b.score - a.score || a.start - b.start)
-    .slice(0, maxArticles)
-    .sort((a, b) => a.start - b.start)
-    .map((article) => article.text.slice(0, 3000));
+  const chosen = rank(articles, groups, requireEveryGroup).slice(0, maxArticles);
+  if (requireEveryGroup && chosen.length < maxArticles && groups.length > 1) {
+    // Gevşetme "herhangi bir terim"e açılırsa "yasal" gibi sık geçen bir
+    // kelime konuyla ilgisiz maddeleri öne çıkarır. Bu yüzden yalnızca
+    // belgede en seyrek geçen — yani konuyu asıl tanımlayan — terim grubu
+    // aranır: önalım/tahliye gibi.
+    const distinctive = [...groups].sort(
+      (a, b) => articleFrequency(articles, a) - articleFrequency(articles, b)
+    )[0];
+    const taken = new Set(chosen.map((article) => article.start));
+    for (const article of rank(articles, [distinctive], true)) {
+      if (chosen.length >= maxArticles) break;
+      if (!taken.has(article.start)) chosen.push(article);
+    }
+  }
 
-  return selected.join("\n\n---\n\n").slice(0, maxChars).trim();
+  return chosen
+    .sort((a, b) => a.start - b.start)
+    .map((article) => article.text.slice(0, 3000))
+    .join("\n\n---\n\n")
+    .slice(0, maxChars)
+    .trim();
 }
 
 export function focusedExcerpt(body: string, focus: string, maxChars = 3600): string {

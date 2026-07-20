@@ -2,6 +2,7 @@
 
 import { motion } from "motion/react";
 import { Markdown } from "./Markdown";
+import { CopyButton } from "./CopyButton";
 import { SourceCard } from "./SourceCard";
 import { fadeUp, spring } from "../_lib/motion";
 import { SOURCE_OPTIONS, type Answer, type DecisionSource, type ResearchSource } from "../_lib/types";
@@ -135,6 +136,9 @@ export function AnswerView({ answer }: { answer: Answer }) {
       </motion.header>
 
       <motion.div className="lede prose" {...fadeUp(0.2)}>
+        <div className="piece-bar">
+          <CopyButton text={`${answer.title}\n\n${answer.summary}`} title="Özeti kopyala" />
+        </div>
         <Markdown>{answer.summary}</Markdown>
         <Cites ids={answer.summarySourceIds} />
       </motion.div>
@@ -142,7 +146,10 @@ export function AnswerView({ answer }: { answer: Answer }) {
       {answer.sections.map((section, index) => (
         <motion.section className="section" key={`${section.heading}-${index}`} {...fadeUp(0.28 + index * 0.06)}>
           <div className="section-body">
-            <h3>{section.heading}</h3>
+            <div className="section-head">
+              <h3>{section.heading}</h3>
+              <CopyButton text={`${section.heading}\n\n${section.text}`} title="Bu bölümü kopyala" />
+            </div>
             <div className="prose">
               <Markdown>{section.text}</Markdown>
             </div>

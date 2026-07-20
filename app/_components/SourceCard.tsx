@@ -3,9 +3,36 @@
 import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { Markdown } from "./Markdown";
-import { Check, Chevron, Copy, Document, External } from "./Icons";
+import { CopyButton } from "./CopyButton";
+import { Chevron, Document, External } from "./Icons";
 import { spring } from "../_lib/motion";
 import type { Source } from "../_lib/types";
+
+/**
+ * Kopyalanan metin tek başına atıf yapılabilir olmalı: künye ve resmî bağlantı
+ * olmadan yapıştırılan bir pasaj dilekçede kaynaksız kalır.
+ */
+function citation(source: Source): string {
+  if (source.kind === "decision") {
+    const heading = [source.court, source.chamber].filter(Boolean).join(" · ") || "Karar";
+    const numbers = [
+      source.esasNo && `${source.esasNo} E.`,
+      source.kararNo && `${source.kararNo} K.`,
+      source.date,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return [heading, numbers, source.sourceUrl].filter(Boolean).join("\n");
+  }
+  const heading = [source.name, source.number && `${source.number} sayılı`].filter(Boolean).join(" · ");
+  const gazette = [
+    source.officialGazetteDate && `RG ${source.officialGazetteDate}`,
+    source.officialGazetteNumber && `Sayı ${source.officialGazetteNumber}`,
+  ]
+    .filter(Boolean)
+    .join(" / ");
+  return [heading, gazette, source.sourceUrl].filter(Boolean).join("\n");
+}
 
 type DecisionText =
   | { status: "loading" }
@@ -16,7 +43,6 @@ export function SourceCard({ source }: { source: Source }) {
   const [documentOpen, setDocumentOpen] = useState(false);
   const [excerptOpen, setExcerptOpen] = useState(false);
   const [decision, setDecision] = useState<DecisionText | null>(null);
-  const [copied, setCopied] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -41,18 +67,8 @@ export function SourceCard({ source }: { source: Source }) {
     }
   }
 
-  async function copyText() {
-    if (decision?.status !== "ready") return;
-    try {
-      await navigator.clipboard.writeText(decision.text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Pano izni yoksa düğme değişmeden kalır.
-    }
-  }
-
   const excerptCanCollapse = source.excerpt.length > 720;
+  const reference = citation(source);
 
   return (
     <>
@@ -99,11 +115,27 @@ export function SourceCard({ source }: { source: Source }) {
               <External />
               {source.kind === "decision" ? "Resmî kayıt" : "Resmî metin"}
             </a>
+            <CopyButton
+              text={reference}
+              label="Künye"
+              title="Künyeyi ve resmî bağlantıyı kopyala"
+              className="act"
+            />
           </div>
         </div>
 
         <div className={`excerpt${excerptCanCollapse ? " excerpt-collapsible" : ""}${excerptOpen ? " excerpt-open" : ""}`}>
-          <span className="excerpt-label">{source.kind === "legislation" ? "İlgili madde" : "İlgili bölüm"}</span>
+          <div className="excerpt-head">
+            <span className="excerpt-label">{source.kind === "legislation" ? "İlgili madde" : "İlgili bölüm"}</span>
+            <CopyButton
+              text={`${reference}\n\n${source.excerpt}`}
+              title={
+                source.kind === "legislation"
+                  ? "Madde metnini künyesiyle birlikte kopyala"
+                  : "Pasajı künyesiyle birlikte kopyala"
+              }
+            />
+          </div>
           <div className="excerpt-body">
             <Markdown>{source.excerpt}</Markdown>
           </div>
@@ -148,10 +180,12 @@ export function SourceCard({ source }: { source: Source }) {
           <div className="document-dialog-body" aria-live="polite">
             {decision?.status === "ready" && (
               <div className="fulltext-bar">
-                <button className="act" onClick={copyText}>
-                  {copied ? <Check /> : <Copy />}
-                  {copied ? "Kopyalandı" : "Metni kopyala"}
-                </button>
+                <CopyButton
+                  text={`${reference}\n\n${decision.text}`}
+                  label="Metni kopyala"
+                  title="Karar metnini künyesiyle birlikte kopyala"
+                  className="act"
+                />
               </div>
             )}
             {(!decision || decision.status === "loading") && <p className="muted">Karar metni yükleniyor…</p>}
