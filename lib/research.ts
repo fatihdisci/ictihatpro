@@ -26,7 +26,7 @@ import {
   relevanceMatches,
   relevantLegislationArticles,
 } from "./legal-search";
-import { semanticRerank } from "./semantic";
+import { DEFAULT_MIN_SCORE, semanticRerank } from "./semantic";
 
 export const RESEARCH_SOURCES = ["YARGITAY", "ISTINAF", "DANISTAY", "KYB", "MEVZUAT"] as const;
 export type ResearchSource = (typeof RESEARCH_SOURCES)[number];
@@ -923,10 +923,15 @@ export async function researchAndAnswer(
         })),
         signal
       );
-      const configuredThreshold = Number(process.env.SEMANTIC_MIN_SCORE ?? "0.42");
+      // Eşik sağlayıcıya göre değişir: embedding kosinüsü ile modelin verdiği
+      // 0-100 puanın dağılımı aynı değildir. SEMANTIC_MIN_SCORE verilmemişse
+      // fiilen kullanılan sağlayıcının varsayılanı uygulanır; aksi hâlde
+      // sağlayıcı değiştiğinde ya tüm kararlar elenir ya da hiçbiri elenmez.
+      const providerDefault = DEFAULT_MIN_SCORE[ranked.provider];
+      const configuredThreshold = Number(process.env.SEMANTIC_MIN_SCORE);
       const minimumScore = Number.isFinite(configuredThreshold)
         ? Math.min(0.9, Math.max(0, configuredThreshold))
-        : 0.42;
+        : providerDefault;
       const byId = new Map(loadedDecisions.map((item) => [item.summary.documentId, item]));
       selected = ranked.results
         .filter((result) => result.score >= minimumScore)

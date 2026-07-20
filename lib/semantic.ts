@@ -8,10 +8,37 @@ export type SemanticDocument = {
   title?: string;
 };
 
+export type SemanticProvider = "openai-embedding" | "deepseek-rerank";
+
 export type SemanticRanking = {
-  provider: "openrouter-embedding" | "deepseek-rerank";
+  provider: SemanticProvider;
   results: Array<{ id: string; score: number }>;
 };
+
+/**
+ * Eleme eşiği sağlayıcıya bağlıdır ve taşınabilir değildir. Embedding kosinüs
+ * yakınlıkları ile modelin verdiği 0-100 puanın dağılımı farklıdır: OpenAI
+ * embedding'lerinde ilgili belgeler tipik olarak 0,25-0,45 bandına düşerken
+ * DeepSeek puanlaması aynı ilgiyi 0,8'e kadar çıkarır. Tek bir sabit eşik
+ * kullanmak, sağlayıcı değiştiğinde ya her kararı eler ya da hiçbirini elemez.
+ */
+export const DEFAULT_MIN_SCORE: Record<SemanticProvider, number> = {
+  "openai-embedding": 0.28,
+  "deepseek-rerank": 0.42,
+};
+
+// text-embedding-3-* girdi başına 8.192 token kabul eder. Türkçe morfolojik
+// olarak zengin olduğundan karakter/token oranı düşüktür; güvenli kalmak için
+// girdi karakter bazında sınırlanır. Kararın başı konuyu, sonu hükmü taşıdığı
+// için orta kısım atılır, iki uç korunur.
+const MAX_EMBEDDING_CHARS = 11_000;
+
+function fitForEmbedding(text: string): string {
+  if (text.length <= MAX_EMBEDDING_CHARS) return text;
+  const head = Math.floor(MAX_EMBEDDING_CHARS * 0.6);
+  const tail = MAX_EMBEDDING_CHARS - head;
+  return `${text.slice(0, head)}\n\n[...]\n\n${text.slice(-tail)}`;
+}
 
 const RERANK_TOOL: DeepSeekTool = {
   type: "function",
@@ -49,7 +76,7 @@ const rankingInFlight = new Map<string, Promise<SemanticRanking>>();
 const MAX_CACHE_ENTRIES = 40;
 
 function rankingKey(query: string, documents: SemanticDocument[]): string {
-  const provider = process.env.OPENROUTER_API_KEY ? "openrouter-with-deepseek-fallback" : "deepseek";
+  const provider = process.env.OPENAI_API_KEY ? "openai-with-deepseek-fallback" : "deepseek";
   const hash = createHash("sha256");
   hash.update(provider);
   hash.update(query);
@@ -84,26 +111,27 @@ export function cosineSimilarity(first: number[], second: number[]): number {
   return first.reduce((sum, item, index) => sum + item * second[index], 0);
 }
 
-async function rankWithOpenRouter(
+async function rankWithOpenAI(
   query: string,
   documents: SemanticDocument[],
   signal?: AbortSignal
 ): Promise<SemanticRanking> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) throw new Error("OPENROUTER_API_KEY tanımlı değil");
-  const model = process.env.OPENROUTER_EMBEDDING_MODEL ?? "google/gemini-embedding-001";
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY tanımlı değil");
+  const model = process.env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small";
+  const baseUrl = (process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(/\/$/, "");
+  // OpenAI embedding modelleri görev öneki kullanmaz; sorgu ve belge aynı
+  // uzaya doğrudan gömülür.
   const inputs = [
-    `task: search result | query: ${query}`,
-    ...documents.map((document) => `title: ${document.title ?? "Karar"} | text: ${document.text}`),
+    query,
+    ...documents.map((document) => fitForEmbedding(`${document.title ?? "Karar"}\n\n${document.text}`)),
   ];
   const timeout = AbortSignal.timeout(90_000);
-  const response = await fetch("https://openrouter.ai/api/v1/embeddings", {
+  const response = await fetch(`${baseUrl}/embeddings`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
-      "HTTP-Referer": process.env.TRUSTED_ORIGIN ?? "https://ictihatpro.vercel.app",
-      "X-Title": "Ictihat Asistani",
     },
     body: JSON.stringify({ model, input: inputs, encoding_format: "float" }),
     signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
@@ -120,7 +148,7 @@ async function rankWithOpenRouter(
   if (vectors.length !== inputs.length) throw new Error("Embedding servisi eksik sonuç döndürdü");
   const queryVector = vectors[0];
   return {
-    provider: "openrouter-embedding",
+    provider: "openai-embedding",
     results: documents
       .map((document, index) => ({ id: document.id, score: cosineSimilarity(queryVector, vectors[index + 1]) }))
       .sort((a, b) => b.score - a.score),
@@ -180,7 +208,7 @@ async function rankWithDeepSeek(
 
 /**
  * Said Sürücü'nin yargi-mcp yaklaşımındaki gibi embedding ile yeniden
- * sıralar. OpenRouter yapılandırılmamışsa mevcut DeepSeek bağlantısı aynı
+ * sıralar. OPENAI_API_KEY yapılandırılmamışsa mevcut DeepSeek bağlantısı aynı
  * görevi yapılandırılmış bir puanlama çağrısıyla yerine getirir.
  */
 export async function semanticRerank(
@@ -196,11 +224,11 @@ export async function semanticRerank(
   if (active) return active;
 
   const rank = async () => {
-    if (process.env.OPENROUTER_API_KEY) {
+    if (process.env.OPENAI_API_KEY) {
       try {
-        return await rankWithOpenRouter(query, documents, signal);
-      } catch (openRouterError) {
-        if (!process.env.DEEPSEEK_API_KEY) throw openRouterError;
+        return await rankWithOpenAI(query, documents, signal);
+      } catch (embeddingError) {
+        if (!process.env.DEEPSEEK_API_KEY) throw embeddingError;
         return rankWithDeepSeek(query, documents, signal);
       }
     }

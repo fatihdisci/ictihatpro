@@ -4,12 +4,12 @@ import { cosineSimilarity, semanticRerank } from "../lib/semantic";
 
 vi.mock("../lib/deepseek", () => ({ complete: vi.fn() }));
 
-const originalOpenRouterKey = process.env.OPENROUTER_API_KEY;
+const originalOpenAIKey = process.env.OPENAI_API_KEY;
 const originalDeepSeekKey = process.env.DEEPSEEK_API_KEY;
 
 afterEach(() => {
-  if (originalOpenRouterKey == null) delete process.env.OPENROUTER_API_KEY;
-  else process.env.OPENROUTER_API_KEY = originalOpenRouterKey;
+  if (originalOpenAIKey == null) delete process.env.OPENAI_API_KEY;
+  else process.env.OPENAI_API_KEY = originalOpenAIKey;
   if (originalDeepSeekKey == null) delete process.env.DEEPSEEK_API_KEY;
   else process.env.DEEPSEEK_API_KEY = originalDeepSeekKey;
   vi.unstubAllGlobals();
@@ -22,8 +22,8 @@ describe("semantik karar sıralaması", () => {
     expect(cosineSimilarity([1, 0], [0, 1])).toBe(0);
   });
 
-  it("OpenRouter varsa Said'in yaklaşımı gibi embedding ile yeniden sıralar", async () => {
-    process.env.OPENROUTER_API_KEY = "test-key";
+  it("OpenAI anahtarı varsa embedding ile yeniden sıralar", async () => {
+    process.env.OPENAI_API_KEY = "test-key";
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -41,13 +41,13 @@ describe("semantik karar sıralaması", () => {
       { id: "ilgili", text: "Miras bırakanın muvazaalı temliki" },
     ]);
 
-    expect(ranked.provider).toBe("openrouter-embedding");
+    expect(ranked.provider).toBe("openai-embedding");
     expect(ranked.results[0].id).toBe("ilgili");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(complete).not.toHaveBeenCalled();
   });
 
-  it("OpenRouter yoksa mevcut DeepSeek bağlantısını yalnızca puanlayıcı olarak kullanır", async () => {
+  it("OpenAI anahtarı yoksa mevcut DeepSeek bağlantısını yalnızca puanlayıcı olarak kullanır", async () => {
     vi.mocked(complete).mockResolvedValue({
       role: "assistant",
       tool_calls: [{
@@ -69,8 +69,8 @@ describe("semantik karar sıralaması", () => {
     expect(ranked.results.map((item) => item.id)).toEqual(["b", "a"]);
   });
 
-  it("OpenRouter hata verirse aynı adayları otomatik olarak DeepSeek ile sıralar", async () => {
-    process.env.OPENROUTER_API_KEY = "test-key";
+  it("Embedding servisi hata verirse aynı adayları otomatik olarak DeepSeek ile sıralar", async () => {
+    process.env.OPENAI_API_KEY = "test-key";
     process.env.DEEPSEEK_API_KEY = "deepseek-test-key";
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: false,
@@ -101,7 +101,7 @@ describe("semantik karar sıralaması", () => {
 
 describe("semantik sıralama model katmanı", () => {
   it("DeepSeek yeniden sıralamasını ucuz katmanda çalıştırır", async () => {
-    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.OPENAI_API_KEY;
     vi.mocked(complete).mockResolvedValue({
       role: "assistant",
       tool_calls: [

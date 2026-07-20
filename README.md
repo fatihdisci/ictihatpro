@@ -16,9 +16,9 @@ Bu uygulama LLM'in karar künyesi üretmesine izin vermez:
 
 Karar aramalarında ilk Bedesten sonuçlarının sınırlı bir bölümü tam metinden
 doğrulanır ve kullanıcının cümlesine anlamsal yakınlığına göre yeniden
-sıralanır. `OPENROUTER_API_KEY` tanımlıysa `google/gemini-embedding-001`
-embedding modeli kullanılır; tanımlı değilse mevcut DeepSeek bağlantısı yalnızca
-aday puanlayıcı olarak çalışır. Semantik katman hukukî cevap üretmez ve karar
+sıralanır. `OPENAI_API_KEY` tanımlıysa `text-embedding-3-small` embedding
+modeli kullanılır; tanımlı değilse mevcut DeepSeek bağlantısı yalnızca aday
+puanlayıcı olarak çalışır. Semantik katman hukukî cevap üretmez ve karar
 künyesine müdahale etmez.
 
 Bu önlemler karar künyesi uydurma riskini teknik olarak ciddi ölçüde azaltır. Hiçbir LLM hukukî yorum bakımından matematiksel doğruluk garantisi veremez; bu nedenle çıktı araştırma taslağı olarak sunulur.
@@ -47,7 +47,7 @@ Uygulama DeepSeek'i üç ayrı işte kullanır ve bunlar aynı zorlukta değildi
 | İş | Katman | Muhakeme |
 |---|---|---|
 | Arama planı (soruyu Bedesten sorgusuna çevirir) | `DEEPSEEK_MODEL_FAST` | kapalı |
-| Semantik yeniden sıralama (OpenRouter yoksa) | `DEEPSEEK_MODEL_FAST` | kapalı |
+| Semantik yeniden sıralama (`OPENAI_API_KEY` yoksa) | `DEEPSEEK_MODEL_FAST` | kapalı |
 | Cevap sentezi (kullanıcıya görünen tek çıktı) | `DEEPSEEK_MODEL` | **açık** |
 
 İlk iki çağrı dar şemalı ve tek doğru cevabı olan dönüştürmelerdir; ucuz katman
@@ -102,13 +102,29 @@ Zorunlu değerler:
 
 İsteğe bağlı gerçek embedding sıralaması:
 
-- `OPENROUTER_API_KEY`
-- `OPENROUTER_EMBEDDING_MODEL=google/gemini-embedding-001`
+- `OPENAI_API_KEY`
+- `OPENAI_EMBEDDING_MODEL=text-embedding-3-small`
 
-OpenRouter tanımlanmazsa semantik yeniden sıralama `DEEPSEEK_API_KEY` ile
-çalışmaya devam eder. OpenRouter isteği başarısız olursa otomatik olarak
-DeepSeek sıralamasına geçilir. `SEMANTIC_CANDIDATES` varsayılan olarak `20`,
-`SEMANTIC_MIN_SCORE` ise `0.42` değerindedir.
+Tanımlanmazsa semantik yeniden sıralama `DEEPSEEK_API_KEY` ile çalışmaya devam
+eder. Embedding isteği başarısız olursa otomatik olarak DeepSeek sıralamasına
+geçilir. `SEMANTIC_CANDIDATES` varsayılan olarak `20`'dir.
+
+**Eleme eşiği sağlayıcıya bağlıdır.** Embedding kosinüs yakınlığı ile modelin
+verdiği 0-100 puanın dağılımı aynı değildir: OpenAI embedding'lerinde ilgili
+kararlar tipik olarak 0,25-0,45 bandına düşerken DeepSeek puanlaması aynı ilgiyi
+çok daha yükseğe taşır. Bu nedenle `SEMANTIC_MIN_SCORE` verilmezse fiilen
+kullanılan sağlayıcının varsayılanı uygulanır (OpenAI `0.28`, DeepSeek `0.42`).
+Buraya sabit bir değer yazmak, sağlayıcı değiştiğinde ya tüm kararların
+elenmesine ya da hiçbirinin elenmemesine yol açar.
+
+Eşiğin kendi sorularınızda doğru olduğunu ölçmek için:
+
+```bash
+LIVE_SEMANTIC=1 npm test -- tests/semantic.live.test.ts
+```
+
+Bu test gerçek puanları konsola yazar ve ilgili kararın eşiğin üstünde,
+ilgisizin altında kaldığını doğrular.
 
 Kendi alan adınız varsa ayrıca:
 
@@ -165,8 +181,8 @@ Bedesten ve mevzuat istemci tasarımında incelenen MIT lisanslı açık kaynak 
 - `DEEPSEEK_API_KEY` hiçbir istemci paketine eklenmez ve tarayıcıya gönderilmez.
 - Anahtar yalnızca sunucudaki `/api/chat` işlemi DeepSeek'e istek gönderirken kullanılır.
 - Semantik sıralamada en fazla `SEMANTIC_CANDIDATES` adet doğrulanmış karar
-  pasajı yapılandırılmış sıralama sağlayıcısına gönderilir. OpenRouter
-  kullanılacaksa `OPENROUTER_API_KEY` de yalnızca sunucuda tutulur.
+  pasajı yapılandırılmış sıralama sağlayıcısına gönderilir. OpenAI embedding
+  kullanılacaksa `OPENAI_API_KEY` de yalnızca sunucuda tutulur.
 - `.env.local` Git tarafından dışlanır.
 - Uygulamada üçüncü taraf analiz veya izleme kodu yoktur.
 - Vercel kullanırsanız secret değerleri Vercel altyapısında tutulur. Tamamen kendi cihazınızda tutmak istiyorsanız self-host seçeneğini kullanın.

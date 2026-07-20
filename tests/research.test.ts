@@ -32,7 +32,12 @@ vi.mock("../lib/mevzuat", () => ({
   searchLegislation: vi.fn(),
   getLegislationDocument: vi.fn(),
 }));
-vi.mock("../lib/semantic", () => ({ semanticRerank: vi.fn() }));
+vi.mock("../lib/semantic", async (importOriginal) => ({
+  // DEFAULT_MIN_SCORE gerçek değerleriyle kalmalı: sahte bir eşik, eleme
+  // davranışını testlerde sessizce değiştirir.
+  ...(await importOriginal<typeof import("../lib/semantic")>()),
+  semanticRerank: vi.fn(),
+}));
 
 function decisionSummary(documentId: string, overrides: Record<string, unknown> = {}) {
   return {
@@ -103,10 +108,13 @@ MADDE 351
 Kiralananı sonradan edinen kişi, kendisi veya kanunda sayılan yakınları için konut ya da işyeri gereksinimi sebebiyle kullanma zorunluluğu varsa sözleşmeyi dava yoluyla sona erdirebilir.`;
 
 const originalSemanticCandidates = process.env.SEMANTIC_CANDIDATES;
+const originalSemanticMinScore = process.env.SEMANTIC_MIN_SCORE;
 
 afterEach(() => {
   if (originalSemanticCandidates == null) delete process.env.SEMANTIC_CANDIDATES;
   else process.env.SEMANTIC_CANDIDATES = originalSemanticCandidates;
+  if (originalSemanticMinScore == null) delete process.env.SEMANTIC_MIN_SCORE;
+  else process.env.SEMANTIC_MIN_SCORE = originalSemanticMinScore;
 });
 
 beforeEach(() => {
@@ -442,5 +450,52 @@ describe("model katmanı seçimi", () => {
 
     expect(synthesisCall.tier).toBe("pro");
     expect(synthesisCall.reasoning).toBe(true);
+  });
+});
+
+describe("anlamsal eleme eşiği", () => {
+  const question = "Konut ihtiyacı nedeniyle tahliye davasının şartları nasıl değerlendirilir?";
+  // Her iki karar da kelime eşleşmesinden geçer. Böylece aradaki tek fark
+  // anlamsal puan olur ve eşiğin etkisi yalıtılmış biçimde ölçülür; aksi
+  // hâlde seçim boş kalınca devreye giren kelime yedeği sonucu gizler.
+  const body = "Konut ihtiyacı nedeniyle tahliye için ihtiyacın gerçek, samimi ve zorunlu olması gerekir. ".repeat(20);
+
+  async function runWithScores(
+    provider: "openai-embedding" | "deepseek-rerank",
+    strong: number,
+    weak: number
+  ) {
+    vi.mocked(searchDecisions).mockResolvedValue({
+      total: 2,
+      decisions: [
+        decisionSummary("9001", { chamber: "3. Hukuk Dairesi" }),
+        decisionSummary("9002", { chamber: "6. Hukuk Dairesi" }),
+      ],
+    });
+    vi.mocked(getDecisionDocument).mockResolvedValue({ mimeType: "text/html", text: body });
+    vi.mocked(semanticRerank).mockResolvedValue({
+      provider,
+      results: [{ id: "9001", score: strong }, { id: "9002", score: weak }],
+    });
+
+    const answer = await researchAndAnswer(question, vi.fn(), undefined, ["YARGITAY"], "sources");
+    return answer.sources.map((source) => (source as { documentId?: string }).documentId);
+  }
+
+  it("embedding sağlayıcısında kendi eşiğini uygular", async () => {
+    // 0,33 embedding kosinüsünde güçlü bir eşleşmedir. Eski sabit 0,42 eşiği
+    // iki kararı da eleyip kelime yedeğine düşer ve ikisini birden döndürürdü.
+    expect(await runWithScores("openai-embedding", 0.33, 0.11)).toEqual(["9001"]);
+  });
+
+  it("DeepSeek puanlamasında daha yüksek olan kendi eşiğini uygular", async () => {
+    // Aynı 0,33 puanı DeepSeek ölçeğinde zayıftır ve elenmelidir.
+    expect(await runWithScores("deepseek-rerank", 0.5, 0.33)).toEqual(["9001"]);
+  });
+
+  it("SEMANTIC_MIN_SCORE verilirse sağlayıcı varsayılanını ezer", async () => {
+    process.env.SEMANTIC_MIN_SCORE = "0.05";
+
+    expect(await runWithScores("openai-embedding", 0.33, 0.11)).toEqual(["9001", "9002"]);
   });
 });
