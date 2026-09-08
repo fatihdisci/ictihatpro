@@ -9,6 +9,8 @@ import { ArrowUpRight, Moon, Sun } from "./_components/Icons";
 import { circularThemeSwap, spring } from "./_lib/motion";
 import { ALL_SOURCES, QUICK_SEARCHES, type QuickSearch, type Research, type ResearchSource } from "./_lib/types";
 
+type ModelOption = { id: string; label: string; provider: string; description: string };
+
 // Sıralı giriş için açık gecikmeli yükselme. Ebeveyn→çocuk variant yayılımına
 // güvenmek yerine her öğe kendi initial/animate'ini taşır; HMR yeniden
 // derlemeleri arasında bile tutarlı çalışır.
@@ -22,6 +24,7 @@ export default function Home() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [configured, setConfigured] = useState(true);
   const [model, setModel] = useState("deepseek-v4-pro");
+  const [models, setModels] = useState<ModelOption[]>([]);
   const [question, setQuestion] = useState("");
   const [researches, setResearches] = useState<Research[]>([]);
   const [busy, setBusy] = useState(false);
@@ -54,6 +57,7 @@ export default function Home() {
         setAuthenticated(Boolean(data.authenticated));
         setConfigured(Boolean(data.configured));
         setModel(data.model || "deepseek-v4-pro");
+        setModels(Array.isArray(data.models) ? data.models : []);
       })
       .catch(() => setAuthenticated(false));
   }, []);
@@ -135,7 +139,7 @@ export default function Home() {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: current, sources }),
+        body: JSON.stringify({ question: current, sources, model }),
       });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -268,7 +272,12 @@ export default function Home() {
               <i aria-hidden="true" />
               Kaynak kontrolü
             </span>
-            <span className="model-name" title="Etkin model">{model}</span>
+            <label className="model-picker" title="Cevabı hazırlayan model">
+              <span className="sr-only">Model seçin</span>
+              <select value={model} onChange={(event) => setModel(event.target.value)} disabled={busy}>
+                {models.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+              </select>
+            </label>
             <button
               className="icon-btn"
               onClick={toggleTheme}

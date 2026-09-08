@@ -9,7 +9,7 @@ cp .env.example .env.local
 openssl rand -hex 32
 ```
 
-Üretilen rastgele değeri `.env.local` içindeki `SESSION_SECRET` alanına yazın. DeepSeek anahtarı, model ve uygulama parolasını da doldurun.
+Üretilen rastgele değeri `.env.local` içindeki `SESSION_SECRET` alanına yazın. OpenAI veya DeepSeek anahtarını, model seçimini ve uygulama parolasını doldurun. OpenAI için `OPENAI_API_KEY` ve isteğe bağlı `OPENAI_MODEL=gpt-5.6-terra` kullanabilirsiniz.
 
 ```bash
 npm run build

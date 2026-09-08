@@ -485,7 +485,8 @@ async function createResearchPlan(
   selected: ResearchSource[],
   searchesDecisions: boolean,
   searchesLegislation: boolean,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  model?: string
 ): Promise<ResearchPlan> {
   const known = KNOWN_ROUTES.find((route) => route.test.test(question));
   if (known) {
@@ -517,6 +518,7 @@ async function createResearchPlan(
       // Plan dar şemalı ve tek doğru cevabı olan bir dönüştürmedir; ucuz
       // katman yeterlidir ve düşük gecikmesi Bedesten turunu erken başlatır.
       tier: "fast",
+      model,
       signal,
     });
     const raw = response.tool_calls?.find((call) => call.function.name === "arama_plani_yaz")?.function.arguments;
@@ -738,7 +740,8 @@ export async function researchAndAnswer(
   onProgress: (event: ProgressEvent) => void,
   signal?: AbortSignal,
   selectedSources: ResearchSource[] = DEFAULT_RESEARCH_SOURCES,
-  outputMode: "analysis" | "sources" = "analysis"
+  outputMode: "analysis" | "sources" = "analysis",
+  model?: string
 ): Promise<VerifiedAnswer> {
   const selected = RESEARCH_SOURCES.filter((source) => selectedSources.includes(source));
   if (selected.length === 0) throw new Error("En az bir araştırma kaynağı seçilmelidir");
@@ -772,7 +775,7 @@ export async function researchAndAnswer(
     Math.max(1, Number.isFinite(configuredSemanticCandidates) ? configuredSemanticCandidates : 20)
   );
   onProgress({ type: "status", message: "Arama planı hazırlanıyor" });
-  const plan = await createResearchPlan(question, selected, searchesDecisions, searchesLegislation, signal);
+  const plan = await createResearchPlan(question, selected, searchesDecisions, searchesLegislation, signal, model);
 
   const searchJobs: Array<Promise<{ kind: "decision"; result: Awaited<ReturnType<typeof searchDecisions>> } | { kind: "legislation"; plan: LegislationPlan; result: Awaited<ReturnType<typeof searchLegislation>> }>> = [];
   if (plan.decisionQuery) {
@@ -1060,6 +1063,7 @@ ${sourceBlock}`;
         // deneme başarısız olursa ikinci deneme JSON kipiyle onarım yapar.
         tier: "pro",
         reasoning: true,
+        model,
         signal,
       });
       const structured =

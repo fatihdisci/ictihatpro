@@ -431,6 +431,15 @@
     font-family: var(--font-code);
     font-size: var(--fs-2xs);
   }
+  .model-picker select {
+    max-width: 11rem;
+    padding: 0.3rem 0.5rem;
+    color: var(--ink-2);
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: var(--r-sm);
+    font: 550 var(--fs-2xs)/1 var(--font-code);
+  }
 
   .icon-btn {
     display: grid;
@@ -1264,7 +1273,7 @@
   /* Üst çubuk dar ekranda ikincil öğeleri sırayla bırakır; öncelik marka +
      tema + çıkış. Böylece hiçbir öğe sarmalanmaz veya kırpılmaz. */
   @media (max-width: 60rem) {
-    .model-name { display: none; }
+    .model-name, .model-picker { display: none; }
   }
   @media (max-width: 44rem) {
     .chip-status { display: none; }

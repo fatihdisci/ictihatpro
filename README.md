@@ -1,6 +1,6 @@
 # İçtihat Asistanı
 
-DeepSeek V4 Pro ve Adalet Bakanlığı UYAP Bedesten karar servisini kullanan kişisel hukuk araştırma uygulaması.
+OpenAI veya DeepSeek modelleri ile Adalet Bakanlığı UYAP Bedesten karar servisini kullanan kişisel hukuk araştırma uygulaması.
 
 ## Neyi farklı yapar?
 
@@ -38,6 +38,16 @@ DEEPSEEK_MODEL=deepseek-v4-pro
 DEEPSEEK_MODEL_FAST=deepseek-v4-flash
 APP_PASSWORD=uzun-ve-benzersiz-bir-parola
 SESSION_SECRET=openssl-ile-uretilmis-en-az-32-karakterlik-deger
+```
+
+OpenAI ile çalışmak için aşağıdakini eklemeniz yeterlidir. OpenAI anahtarı
+tanımlanınca varsayılan model `gpt-5.6-terra` olur ve üst çubuktan model
+seçebilirsiniz:
+
+```dotenv
+OPENAI_API_KEY=sk-...
+# İsteğe bağlı: gpt-6-astra, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5
+OPENAI_MODEL=gpt-5.6-terra
 ```
 
 ### Model katmanları
@@ -93,7 +103,7 @@ LIVE_BEDESTEN=1 npm test -- tests/bedesten.live.test.ts
 
 Proje normal bir Next.js uygulamasıdır. GitHub deposunu Vercel'e bağlayın ve Production, Preview ve Development ortamları için gerekli değişkenleri Vercel Project Settings → Environment Variables bölümünde tanımlayın.
 
-Zorunlu değerler:
+DeepSeek kullanacaksanız zorunlu değerler:
 
 - `DEEPSEEK_API_KEY`
 - `DEEPSEEK_MODEL=deepseek-v4-pro`
@@ -104,6 +114,14 @@ Zorunlu değerler:
 
 - `OPENAI_API_KEY`
 - `OPENAI_EMBEDDING_MODEL=text-embedding-3-small`
+
+OpenAI ile cevap sentezi için Vercel'e şu secret'ı ekleyin:
+
+- `OPENAI_API_KEY` (Production, Preview ve Development)
+- İsteğe bağlı `OPENAI_MODEL=gpt-5.6-terra`
+
+Anahtar eklendiğinde GPT-6 Astra, GPT-5.6 Sol, Terra, Luna ve GPT-5.5 model
+seçenekleri görünür. Anahtar yokken OpenAI seçenekleri arayüzde görünmez.
 
 Tanımlanmazsa semantik yeniden sıralama `DEEPSEEK_API_KEY` ile çalışmaya devam
 eder. Embedding isteği başarısız olursa otomatik olarak DeepSeek sıralamasına
@@ -179,7 +197,7 @@ Bedesten ve mevzuat istemci tasarımında incelenen MIT lisanslı açık kaynak 
 ## Gizlilik
 
 - `DEEPSEEK_API_KEY` hiçbir istemci paketine eklenmez ve tarayıcıya gönderilmez.
-- Anahtar yalnızca sunucudaki `/api/chat` işlemi DeepSeek'e istek gönderirken kullanılır.
+- Anahtarlar yalnızca sunucudaki `/api/chat` işlemi OpenAI veya DeepSeek'e istek gönderirken kullanılır; tarayıcıya gönderilmez.
 - Semantik sıralamada en fazla `SEMANTIC_CANDIDATES` adet doğrulanmış karar
   pasajı yapılandırılmış sıralama sağlayıcısına gönderilir. OpenAI embedding
   kullanılacaksa `OPENAI_API_KEY` de yalnızca sunucuda tutulur.

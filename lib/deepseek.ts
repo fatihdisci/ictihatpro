@@ -45,6 +45,8 @@ type CompletionOptions = {
   tier?: DeepSeekTier;
   /** Belirtilmezse araçlı çağrılarda kapalı, araçsız çağrılarda açıktır. */
   reasoning?: boolean;
+  /** UI'dan seçilen model. */
+  model?: string;
 };
 
 function resolveModel(tier: DeepSeekTier): string {
@@ -79,39 +81,50 @@ function buildBody(options: CompletionOptions, model: string, reasoning: boolean
 }
 
 export async function complete(options: CompletionOptions): Promise<DeepSeekMessage> {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) throw new Error("DEEPSEEK_API_KEY tanımlı değil");
+  const requestedModel = options.model ?? resolveModel(options.tier ?? "pro");
+  const useOpenAI = requestedModel.startsWith("gpt-");
+  const apiKey = useOpenAI ? process.env.OPENAI_API_KEY : process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) throw new Error(useOpenAI ? "OPENAI_API_KEY tanımlı değil" : "DEEPSEEK_API_KEY tanımlı değil");
 
-  const baseUrl = (process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com").replace(/\/$/, "");
-  const model = resolveModel(options.tier ?? "pro");
+  const baseUrl = (useOpenAI ? process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1" : process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com").replace(/\/$/, "");
   const reasoning = options.reasoning ?? !options.tools?.length;
 
   const timeout = AbortSignal.timeout(240_000);
   const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
 
-  const send = (useReasoning: boolean) =>
-    fetch(`${baseUrl}/chat/completions`, {
+  const send = (useReasoning: boolean) => {
+    const body = useOpenAI
+      ? {
+          model: requestedModel, messages: options.messages, max_tokens: options.maxTokens ?? 5000,
+          ...(options.tools?.length ? { tools: options.tools } : {}),
+          ...(options.toolChoice && options.toolChoice !== "auto" ? { tool_choice: options.toolChoice } : {}),
+          ...(options.json ? { response_format: { type: "json_object" } } : {}),
+          ...(useReasoning ? { reasoning_effort: "medium" } : {}),
+        }
+      : buildBody(options, requestedModel, useReasoning);
+    return fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(buildBody(options, model, useReasoning)),
+      body: JSON.stringify(body),
       signal,
       cache: "no-store",
     });
+  };
 
   let response = await send(reasoning);
   if (!response.ok) {
     let detail = (await response.text()).slice(0, 1000);
     // Sağlayıcı thinking'i bu istekle bağdaştıramıyorsa araştırma tamamen
     // başarısız olmasın: aynı istek reasoning kapatılarak yinelenir.
-    if (response.status === 400 && reasoning && REASONING_CONFLICT.test(detail)) {
+    if (!useOpenAI && response.status === 400 && reasoning && REASONING_CONFLICT.test(detail)) {
       response = await send(false);
       if (!response.ok) detail = (await response.text()).slice(0, 1000);
     }
     if (!response.ok) {
-      throw new Error(`DeepSeek hatası: HTTP ${response.status}${detail ? ` — ${detail}` : ""}`);
+      throw new Error(`${useOpenAI ? "OpenAI" : "DeepSeek"} hatası: HTTP ${response.status}${detail ? ` — ${detail}` : ""}`);
     }
   }
 

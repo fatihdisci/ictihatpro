@@ -8,6 +8,7 @@ import {
   verifyPassword,
 } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limit";
+import { MODEL_OPTIONS, defaultModel } from "@/lib/models";
 
 export const runtime = "nodejs";
 
@@ -18,7 +19,8 @@ export async function GET() {
     {
       authenticated: await isAuthorized(),
       configured: Boolean(process.env.APP_PASSWORD && process.env.SESSION_SECRET),
-      model: process.env.DEEPSEEK_MODEL ?? "deepseek-v4-pro",
+      model: defaultModel(),
+      models: MODEL_OPTIONS.filter((model) => model.provider !== "openai" || Boolean(process.env.OPENAI_API_KEY)),
     },
     { headers: { "Cache-Control": "no-store" } }
   );

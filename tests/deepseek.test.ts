@@ -4,6 +4,7 @@ import { complete } from "../lib/deepseek";
 const originalKey = process.env.DEEPSEEK_API_KEY;
 const originalModel = process.env.DEEPSEEK_MODEL;
 const originalFastModel = process.env.DEEPSEEK_MODEL_FAST;
+const originalOpenAIKey = process.env.OPENAI_API_KEY;
 
 const TOOL = {
   type: "function" as const,
@@ -29,6 +30,7 @@ beforeEach(() => {
   process.env.DEEPSEEK_API_KEY = "test-key";
   delete process.env.DEEPSEEK_MODEL;
   delete process.env.DEEPSEEK_MODEL_FAST;
+  delete process.env.OPENAI_API_KEY;
 });
 
 afterEach(() => {
@@ -39,6 +41,8 @@ afterEach(() => {
   else process.env.DEEPSEEK_MODEL = originalModel;
   if (originalFastModel == null) delete process.env.DEEPSEEK_MODEL_FAST;
   else process.env.DEEPSEEK_MODEL_FAST = originalFastModel;
+  if (originalOpenAIKey == null) delete process.env.OPENAI_API_KEY;
+  else process.env.OPENAI_API_KEY = originalOpenAIKey;
 });
 
 describe("DeepSeek model katmanı", () => {
@@ -68,6 +72,20 @@ describe("DeepSeek model katmanı", () => {
 
     expect(sentBody(fetchMock, 0).model).toBe("ozel-pro");
     expect(sentBody(fetchMock, 1).model).toBe("ozel-flash");
+  });
+});
+
+describe("OpenAI model katmanı", () => {
+  it("GPT modeli seçildiğinde OpenAI uç noktasını ve anahtarını kullanır", async () => {
+    process.env.OPENAI_API_KEY = "openai-test-key";
+    const fetchMock = stubFetch(ok());
+
+    await complete({ messages: [{ role: "user", content: "soru" }], model: "gpt-5.6-terra" });
+
+    expect(fetchMock.mock.calls[0][0]).toBe("https://api.openai.com/v1/chat/completions");
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe("Bearer openai-test-key");
+    expect(sentBody(fetchMock).model).toBe("gpt-5.6-terra");
+    expect(sentBody(fetchMock).thinking).toBeUndefined();
   });
 });
 
