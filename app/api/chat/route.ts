@@ -53,7 +53,11 @@ export async function POST(request: Request) {
     async start(controller) {
       const send = (event: unknown) => controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
       try {
-        const answer = await researchAndAnswer(question, send, request.signal, sources, "sources", model);
+        // Kaynaklar sunucuda doğrulandıktan sonra seçilen modelden kaynakla
+        // sınırlı hukukî sentez alınır. "sources" kipi yalnızca MCP gibi
+        // ham kaynak isteyen çağrılar içindir; burada kullanılması OpenAI
+        // tamamlanma çağrısını ve kullanıcıya görünen analizi atlıyordu.
+        const answer = await researchAndAnswer(question, send, request.signal, sources, "analysis", model);
         send({ type: "answer", answer });
         send({ type: "done" });
       } catch (error) {
