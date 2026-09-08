@@ -78,14 +78,14 @@ describe("DeepSeek model katmanı", () => {
 describe("OpenAI model katmanı", () => {
   it("GPT modeli seçildiğinde OpenAI uç noktasını ve anahtarını kullanır", async () => {
     process.env.OPENAI_API_KEY = "openai-test-key";
-    const fetchMock = stubFetch(ok());
+    const fetchMock = stubFetch(Response.json({ output_text: "tamam" }));
 
     await complete({ messages: [{ role: "user", content: "soru" }], model: "gpt-5.6-terra" });
 
-    expect(fetchMock.mock.calls[0][0]).toBe("https://api.openai.com/v1/chat/completions");
+    expect(fetchMock.mock.calls[0][0]).toBe("https://api.openai.com/v1/responses");
     expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe("Bearer openai-test-key");
     expect(sentBody(fetchMock).model).toBe("gpt-5.6-terra");
-    expect(sentBody(fetchMock).thinking).toBeUndefined();
+    expect(sentBody(fetchMock).max_output_tokens).toBe(5000);
   });
 });
 

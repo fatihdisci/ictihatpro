@@ -93,16 +93,33 @@ export async function complete(options: CompletionOptions): Promise<DeepSeekMess
   const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
 
   const send = (useReasoning: boolean) => {
+    // GPT-6 Astra araç çağrılarını Responses API üzerinden destekler. Aynı
+    // yol GPT-5.6 ailesi için de güncel ve ortak API sözleşmesidir.
+    const systemInstructions = options.messages
+      .filter((message) => message.role === "system")
+      .map((message) => message.content ?? "")
+      .join("\n\n");
+    const responseToolChoice =
+      options.toolChoice === "required"
+        ? "required"
+        : options.toolChoice && options.toolChoice !== "auto"
+          ? { type: "function", name: options.toolChoice.function.name }
+          : undefined;
     const body = useOpenAI
       ? {
-          model: requestedModel, messages: options.messages, max_tokens: options.maxTokens ?? 5000,
-          ...(options.tools?.length ? { tools: options.tools } : {}),
-          ...(options.toolChoice && options.toolChoice !== "auto" ? { tool_choice: options.toolChoice } : {}),
-          ...(options.json ? { response_format: { type: "json_object" } } : {}),
-          ...(useReasoning ? { reasoning_effort: "medium" } : {}),
+          model: requestedModel,
+          input: options.messages
+            .filter((message) => message.role !== "system")
+            .map((message) => ({ role: message.role, content: message.content ?? "" })),
+          ...(systemInstructions ? { instructions: systemInstructions } : {}),
+          max_output_tokens: options.maxTokens ?? 5000,
+          ...(options.tools?.length ? { tools: options.tools.map((tool) => ({ ...tool.function, type: "function" })) } : {}),
+          ...(responseToolChoice ? { tool_choice: responseToolChoice } : {}),
+          ...(options.json ? { text: { format: { type: "json_object" } } } : {}),
+          ...(useReasoning ? { reasoning: { effort: "medium" } } : {}),
         }
       : buildBody(options, requestedModel, useReasoning);
-    return fetch(`${baseUrl}/chat/completions`, {
+    return fetch(`${baseUrl}${useOpenAI ? "/responses" : "/chat/completions"}`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -128,9 +145,31 @@ export async function complete(options: CompletionOptions): Promise<DeepSeekMess
     }
   }
 
-  const data = (await response.json()) as {
-    choices?: Array<{ message?: DeepSeekMessage }>;
-  };
+  if (useOpenAI) {
+    const data = (await response.json()) as {
+      output_text?: string;
+      output?: Array<{
+        type?: string;
+        id?: string;
+        call_id?: string;
+        name?: string;
+        arguments?: string;
+        content?: Array<{ type?: string; text?: string }>;
+      }>;
+    };
+    const toolCalls = (data.output ?? [])
+      .filter((item) => item.type === "function_call" && item.name && item.arguments)
+      .map((item) => ({
+        id: item.call_id ?? item.id ?? "openai_tool_call",
+        type: "function" as const,
+        function: { name: item.name!, arguments: item.arguments! },
+      }));
+    const content = data.output_text ?? data.output?.flatMap((item) => item.content ?? []).find((item) => item.type === "output_text")?.text;
+    if (!content && toolCalls.length === 0) throw new Error("OpenAI boş yanıt verdi");
+    return { role: "assistant", content, tool_calls: toolCalls };
+  }
+
+  const data = (await response.json()) as { choices?: Array<{ message?: DeepSeekMessage }> };
   const message = data.choices?.[0]?.message;
   if (!message) throw new Error("DeepSeek boş yanıt verdi");
   return message;
